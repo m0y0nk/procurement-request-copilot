@@ -85,11 +85,20 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-Replay mode is selected by default in `.env.example` and requires no key. Live mode uses the OpenAI-compatible endpoint; set `LLM_MODE=live`, `LLM_MODEL`, and `LLM_API_KEY`. Never commit `.env`.
+Replay mode is selected by default in `.env.example` and requires no key. Live mode uses Groq's OpenAI-compatible endpoint by default; set `LLM_MODE=live`, `LLM_MODEL`, and `LLM_API_KEY` in `.env`. Never commit `.env`.
 
-The wrapper currently supports OpenAI-compatible chat completions through the existing `requests` dependency. Other providers require an explicit implementation and tests.
+Live requests use response rate-limit headers, retry and wait caps, per-run and UTC-day token budgets, an inter-call gap, and a circuit breaker. Successful responses are atomically recorded for replay, and live calls use those records as a cache unless `--no-cache` is selected.
 
 `.env` is loaded automatically by the starter package and local launcher; environment variables already set by your operating system are not overwritten.
+
+The evaluation runner supports offline projections and resumable case checkpoints:
+
+```bash
+python -m eval.runner --split dev --arch A --mode live --dry-run
+python -m eval.runner --split dev --arch A --mode replay
+```
+
+Use `--cases C-001,C-002`, `--limit N`, `--fresh`, and `--no-cache` to control a run. With `--repeats` greater than one, repeat 1 covers every selected case; repeats 2 and 3 are confined to the first `LLM_REPEAT_SAMPLE` cases in case-file order (default 8), so variance is compared on a deterministic sample.
 
 ### 4. Start the local services
 

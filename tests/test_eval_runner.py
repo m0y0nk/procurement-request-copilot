@@ -4,9 +4,17 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from eval.case_models import EvaluationCase, load_cases
-from eval.runner import run_cases, write_results
+from eval.runner import (
+    _completed_keys,
+    dry_run_projection,
+    main,
+    run_cases,
+    run_resumable_cases,
+    write_results,
+)
 from eval.scoring import score_runs
 
 
@@ -161,6 +169,87 @@ class EvaluationRunnerTests(unittest.TestCase):
             self.assertEqual(saved_trace["case_id"], "C-001")
             self.assertEqual(saved_summary["split"], "dev")
             self.assertIn("Architecture", report_path.read_text(encoding="utf-8"))
+
+    def test_resume_skips_a_completed_case_architecture_repeat(self):
+        invocations = []
+
+        def executor(case, architecture, mode):
+            invocations.append((case.id, architecture, mode))
+            return _trace(case, architecture, mode)
+
+        with tempfile.TemporaryDirectory() as directory:
+            raw_path = Path(directory) / "checkpoint.jsonl"
+            run_resumable_cases(
+                [self.case],
+                executor=executor,
+                architecture="A",
+                mode="replay",
+                repeats=1,
+                raw_path=raw_path,
+                case_delay_seconds=0,
+            )
+            resumed = run_resumable_cases(
+                [self.case],
+                executor=executor,
+                architecture="A",
+                mode="replay",
+                repeats=1,
+                raw_path=raw_path,
+                case_delay_seconds=0,
+            )
+
+        self.assertEqual(invocations, [("C-001", "A", "replay")])
+        self.assertEqual(len(resumed), 1)
+
+    def test_resume_discards_only_a_truncated_final_checkpoint_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_path = Path(directory) / "checkpoint.jsonl"
+            raw_path.write_text(
+                '{"case_id":"C-001","architecture":"A","repeat":1}\n'
+                '{"case_id":"C-002"',
+                encoding="utf-8",
+            )
+
+            completed = _completed_keys(raw_path)
+
+            self.assertEqual(completed, {("C-001", "A", 1)})
+            self.assertEqual(
+                raw_path.read_text(encoding="utf-8"),
+                '{"case_id":"C-001","architecture":"A","repeat":1}\n',
+            )
+
+    @patch("tools.procurement.requests.get")
+    @patch("src.llm.requests.post")
+    def test_dry_run_makes_no_http_calls(self, post, get):
+        projection = dry_run_projection([self.case], ("A",))
+
+        self.assertEqual(projection["A"]["cases"], 1)
+        self.assertEqual(projection["A"]["agent_executions"], 1)
+        self.assertEqual(projection["A"]["projected_llm_calls"], 2)
+        post.assert_not_called()
+        get.assert_not_called()
+
+    @patch("tools.procurement.requests.get")
+    @patch("src.llm.requests.post")
+    def test_dry_run_cli_makes_no_http_calls(self, post, get):
+        with patch("eval.runner.load_cases", return_value=[self.case]):
+            result = main(
+                [
+                    "--split",
+                    "dev",
+                    "--arch",
+                    "A",
+                    "--mode",
+                    "live",
+                    "--dry-run",
+                    "--cases",
+                    self.case.id,
+                ]
+            )
+
+        self.assertEqual(result, 0)
+        post.assert_not_called()
+        get.assert_not_called()
 
 
 if __name__ == "__main__":

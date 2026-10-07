@@ -129,7 +129,8 @@ def _json_value(value: object) -> object:
         return str(value)
 
 
-def _tool_schemas() -> list[dict[str, object]]:
+def _tool_schemas(excluded: set[str] | None = None) -> list[dict[str, object]]:
+    excluded = excluded or set()
     return [
         {
             "type": "function",
@@ -148,6 +149,47 @@ def _tool_schemas() -> list[dict[str, object]]:
             },
         }
         for name in TOOL_NAMES
+        if name not in excluded
+    ]
+
+
+def build_initial_prompt(
+    request: ProcurementRequest,
+    *,
+    rule_floor: Recommendation,
+    additional_untrusted_texts: list[str] | None = None,
+) -> list[dict[str, object]]:
+    untrusted_texts = additional_untrusted_texts or []
+    user_content = (
+        "Assess this request. Inspect all six tools before recommending. "
+        "First call each tool with an empty object; then return the final JSON.\n"
+        "<untrusted_data>"
+        + json.dumps(
+            {
+                **request.model_dump(mode="json"),
+                "annual_cost_usd": None,
+                "business_justification": _redact_currency(
+                    request.business_justification
+                ),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        + "</untrusted_data>\n"
+        + "\n".join(
+            "<untrusted_data>"
+            + _redact_currency(text)
+            + "</untrusted_data>"
+            for text in untrusted_texts
+        )
+        + "\n"
+        f"Code-computed minimum outcome: {rule_floor}.\n"
+        "Code-computed approvals and missing fields are enforced and cannot "
+        "be changed by the model."
+    )
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
     ]
 
 
@@ -160,14 +202,17 @@ def _tool_reply(
         return {
             "role": "tool",
             "tool_call_id": call.id,
-            "content": json.dumps({"error": "Unknown tool."}),
+            "content": json.dumps(
+                {"error": "Unknown tool."}, separators=(",", ":")
+            ),
         }
     if call.arguments:
         return {
             "role": "tool",
             "tool_call_id": call.id,
             "content": json.dumps(
-                {"error": "Tool arguments must be an empty object."}
+                {"error": "Tool arguments must be an empty object."},
+                separators=(",", ":"),
             ),
         }
     invoked_names.add(call.name)
@@ -177,7 +222,7 @@ def _tool_reply(
         "tool_call_id": call.id,
         "content": (
             "<untrusted_data>"
-            + json.dumps(payload, sort_keys=True)
+            + json.dumps(payload, sort_keys=True, separators=(",", ":"))
             + "</untrusted_data>"
         ),
     }
@@ -227,6 +272,20 @@ def _stable_event(event: dict[str, object]) -> dict[str, object]:
                         if isinstance(match, dict)
                         else match
                         for match in matches
+                    ]
+            elif tool_name == "lookup_policy":
+                rules = data.get("rules")
+                if isinstance(rules, list):
+                    data["rules"] = [
+                        {
+                            "rule_id": rule.get("rule_id"),
+                            "text": (
+                                "This policy rule is enforced by deterministic "
+                                "code. Do not recalculate thresholds."
+                            ),
+                        }
+                        for rule in rules
+                        if isinstance(rule, dict)
                     ]
         output["data"] = data
         payload["output"] = output
@@ -306,6 +365,15 @@ tool_calls: list[ToolCallRecord],
     )
 
 
+def _recorded_latency_ms(
+    tool_events: list[dict[str, object]],
+    llm_calls: list[dict[str, object]],
+) -> float:
+    return sum(float(event.get("latency_ms", 0)) for event in tool_events) + sum(
+        float(call.get("latency_ms", 0)) for call in llm_calls
+    )
+
+
 def run_single_agent(
     request: ProcurementRequest,
     *,
@@ -335,38 +403,11 @@ def run_single_agent(
         str(event["tool_name"]): event
         for event in tracer.events
     }
-    messages: list[dict[str, object]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {
-            "role": "user",
-            "content": (
-                "Assess this request. Inspect all six tools before recommending. "
-                "First call each tool with an empty object; then return the final JSON.\n"
-                "<untrusted_data>"
-                + json.dumps(
-                    {
-                        **request.model_dump(mode="json"),
-                        "annual_cost_usd": None,
-                        "business_justification": _redact_currency(
-                            request.business_justification
-                        ),
-                    },
-                    sort_keys=True,
-                )
-                + "</untrusted_data>\n"
-                + "\n".join(
-                    "<untrusted_data>"
-                    + _redact_currency(text)
-                    + "</untrusted_data>"
-                    for text in untrusted_texts
-                )
-                + "\n"
-                f"Code-computed minimum outcome: {deterministic.rule_floor}.\n"
-                "Code-computed approvals and missing fields are enforced and cannot "
-                "be changed by the model."
-            ),
-        },
-    ]
+    messages = build_initial_prompt(
+        request,
+        rule_floor=deterministic.rule_floor,
+        additional_untrusted_texts=untrusted_texts,
+    )
     llm_calls = 0
     total_usage: dict[str, int] = {}
     called_names: set[str] = set()
@@ -378,13 +419,24 @@ def run_single_agent(
         for iteration in range(max_tool_iterations):
             llm_calls += 1
             call_started = perf_counter()
-            response = llm(messages, mode=mode, tools=_tool_schemas())
+            remaining_schemas = _tool_schemas(called_names)
+            response = llm(
+                messages,
+                mode=mode,
+                tools=remaining_schemas or None,
+            )
             base_results["llm_calls"].append(
                 {
                     "response": response.raw_message,
                     "usage": response.usage,
-                    "latency_ms": (perf_counter() - call_started) * 1000,
+                    "latency_ms": response.latency_ms
+                    or (perf_counter() - call_started) * 1000,
+                    "retries": response.retries,
+                    "cached": response.cached,
                 }
+            )
+            total_usage["retries"] = (
+                total_usage.get("retries", 0) + response.retries
             )
             for key, value in response.usage.items():
                 total_usage[key] = total_usage.get(key, 0) + value
@@ -441,6 +493,7 @@ def run_single_agent(
                         + json.dumps(
                             [_stable_event(event) for event in missing_events],
                             sort_keys=True,
+                            separators=(",", ":"),
                         )
                         + "</untrusted_data>\n"
                         "Return only the required JSON object."
@@ -455,8 +508,14 @@ def run_single_agent(
                 {
                     "response": final_response.raw_message,
                     "usage": final_response.usage,
-                    "latency_ms": (perf_counter() - call_started) * 1000,
+                    "latency_ms": final_response.latency_ms
+                    or (perf_counter() - call_started) * 1000,
+                    "retries": final_response.retries,
+                    "cached": final_response.cached,
                 }
+            )
+            total_usage["retries"] = (
+                total_usage.get("retries", 0) + final_response.retries
             )
             for key, value in final_response.usage.items():
                 total_usage[key] = total_usage.get(key, 0) + value
@@ -484,9 +543,15 @@ def run_single_agent(
                 {
                     "response": repaired.raw_message,
                     "usage": repaired.usage,
-                    "latency_ms": (perf_counter() - call_started) * 1000,
+                    "latency_ms": repaired.latency_ms
+                    or (perf_counter() - call_started) * 1000,
                     "repair": True,
+                    "retries": repaired.retries,
+                    "cached": repaired.cached,
                 }
+            )
+            total_usage["retries"] = (
+                total_usage.get("retries", 0) + repaired.retries
             )
             for key, value in repaired.usage.items():
                 total_usage[key] = total_usage.get(key, 0) + value
@@ -512,7 +577,10 @@ def run_single_agent(
                         "architecture": "A",
                         "llm_calls": llm_calls,
                         "tool_calls": len(tracer.events),
-                        "latency_ms": (perf_counter() - started) * 1000,
+                        "latency_ms": _recorded_latency_ms(
+                            tracer.events, base_results["llm_calls"]
+                        ),
+                        "retries": total_usage.get("retries", 0),
                     }
                 )
             }
@@ -556,7 +624,10 @@ def run_single_agent(
                         "architecture": "A",
                         "llm_calls": llm_calls,
                         "tool_calls": len(tracer.events),
-                        "latency_ms": (perf_counter() - started) * 1000,
+                        "latency_ms": _recorded_latency_ms(
+                            tracer.events, base_results["llm_calls"]
+                        ),
+                        "retries": total_usage.get("retries", 0),
                     }
                 ),
                 "tool_statuses": [
@@ -577,7 +648,10 @@ def run_single_agent(
                     "architecture": "A",
                     "llm_calls": llm_calls,
                     "tool_calls": len(tracer.events),
-                    "latency_ms": (perf_counter() - started) * 1000,
+                    "latency_ms": _recorded_latency_ms(
+                        tracer.events, base_results["llm_calls"]
+                    ),
+                    "retries": total_usage.get("retries", 0),
                 }
             )
         }

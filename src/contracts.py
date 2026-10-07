@@ -83,6 +83,7 @@ class RunMetadata(BaseModel):
     llm_calls: int = Field(ge=0)
     tool_calls: int = Field(ge=0)
     latency_ms: float = Field(ge=0)
+    retries: int = Field(default=0, ge=0)
 
 
 class RunTelemetry(BaseModel):

@@ -9,6 +9,8 @@ docs/specs/
 docs/FDE_Assessment_3.md
 docs/FDE_LOG.md
 data/decisions.jsonl
+.cache/
+eval/replay/
 AGENTS.md
 STUDENT_CHECKLIST.md
 .github/copilot-instructions.md
