@@ -21,6 +21,7 @@ LOGGER = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_REPLAY_PATH = ROOT / "eval" / "replay" / "responses.json"
 DEFAULT_USAGE_PATH = ROOT / ".cache" / "llm_usage.json"
+MAX_ESTIMATED_REQUEST_TOKENS = 7000
 MAX_RETRIES = 4
 CIRCUIT_BREAKER_FAILURES = 3
 
@@ -65,6 +66,8 @@ class LiveRunState:
     consecutive_failures: int = 0
     last_request_at: float = 0
     aborted: bool = False
+    initialized: bool = False
+    rolling_window: list[tuple[float, int]] = field(default_factory=list)
 
 
 _STATE = LiveRunState()
@@ -80,17 +83,40 @@ def reset_live_run_state() -> None:
         _STATE.retries = 0
         _STATE.consecutive_failures = 0
         _STATE.aborted = False
+        _STATE.initialized = True
+        _STATE.rolling_window.clear()
         _LAST_RATE_LIMITS.clear()
         usage_path = _usage_path()
         daily = _read_daily_usage(usage_path)
         today = datetime.now(UTC).date().isoformat()
-        daily_tokens = daily.get(today, 0)
-        if daily_tokens >= _int_setting("LLM_MAX_TOKENS_PER_DAY", 150000):
+        daily_record = daily.get(today, {})
+        daily_tokens = int(daily_record.get("tokens", 0))
+        if daily_tokens >= _int_setting("LLM_MAX_TOKENS_PER_DAY", 200000):
             _STATE.aborted = True
             raise LLMRunAborted(
                 f"Daily token budget is already spent for {today}: "
                 f"{daily_tokens} tokens recorded."
             )
+        daily_calls = int(daily_record.get("calls", 0))
+        if daily_calls >= _int_setting("LLM_MAX_CALLS_PER_DAY", 1000):
+            _STATE.aborted = True
+            raise LLMRunAborted(
+                f"Daily request budget is already spent for {today}: "
+                f"{daily_calls} requests recorded."
+            )
+        recent = daily_record.get("recent", [])
+        if isinstance(recent, list):
+            _STATE.rolling_window = [
+                (float(event["at"]), int(event["tokens"]))
+                for event in recent
+                if isinstance(event, dict)
+                and isinstance(event.get("at"), (int, float))
+                and isinstance(event.get("tokens"), int)
+                and time.time() - float(event["at"]) < 60
+            ]
+        last_request_at = daily_record.get("last_request_at", 0)
+        if isinstance(last_request_at, (int, float)):
+            _STATE.last_request_at = float(last_request_at)
 
 
 def live_run_usage() -> dict[str, int]:
@@ -103,8 +129,15 @@ def live_run_usage() -> dict[str, int]:
         }
 
 
-def request_key(messages: list[dict[str, object]]) -> str:
-    canonical = json.dumps(messages, sort_keys=True, separators=(",", ":"))
+def request_key(messages: list[dict[str, object]], model: str | None = None) -> str:
+    selected_model = model or os.getenv("LLM_MODEL") or os.getenv("MODEL_NAME")
+    if not selected_model:
+        raise LLMError("LLM_MODEL is required to identify a replay request.")
+    canonical = json.dumps(
+        {"model": selected_model, "messages": messages},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -135,6 +168,55 @@ def _parse_tool_call(value: object) -> LLMToolCall:
     return LLMToolCall(id=call_id, name=function["name"], arguments=arguments)
 
 
+def _normalized_usage(usage: object) -> dict[str, int]:
+    normalized: dict[str, int] = {}
+    if not isinstance(usage, dict):
+        return normalized
+    for key in (
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "reasoning_tokens",
+    ):
+        value = usage.get(key)
+        if isinstance(value, int) and value >= 0:
+            normalized[key] = value
+    completion_details = usage.get("completion_tokens_details")
+    if (
+        "reasoning_tokens" not in normalized
+        and isinstance(completion_details, dict)
+        and isinstance(completion_details.get("reasoning_tokens"), int)
+        and completion_details["reasoning_tokens"] >= 0
+    ):
+        normalized["reasoning_tokens"] = completion_details["reasoning_tokens"]
+    return normalized
+
+
+def _messages_for_model(
+    messages: list[dict[str, object]],
+    model: str,
+) -> list[dict[str, object]]:
+    if not model.startswith("openai/gpt-oss-"):
+        return messages
+    system_text = "\n".join(
+        str(message.get("content", ""))
+        for message in messages
+        if message.get("role") == "system"
+    )
+    model_messages = [
+        dict(message) for message in messages if message.get("role") != "system"
+    ]
+    for message in model_messages:
+        if message.get("role") == "user":
+            message["content"] = (
+                system_text + "\n\n" + str(message.get("content", ""))
+            )
+            break
+    else:
+        model_messages.insert(0, {"role": "user", "content": system_text})
+    return model_messages
+
+
 def _response_from_message(
     message: object,
     *,
@@ -154,12 +236,7 @@ def _response_from_message(
     if not isinstance(raw_calls, list):
         raise LLMError("LLM response tool_calls must be a list.")
     parsed_calls = tuple(_parse_tool_call(call) for call in raw_calls)
-    normalized_usage: dict[str, int] = {}
-    if isinstance(usage, dict):
-        for key in ("prompt_tokens", "completion_tokens", "total_tokens"):
-            value = usage.get(key)
-            if isinstance(value, int) and value >= 0:
-                normalized_usage[key] = value
+    normalized_usage = _normalized_usage(usage)
     latency = (
         float(latency_ms)
         if isinstance(latency_ms, (int, float)) and latency_ms >= 0
@@ -198,7 +275,7 @@ def _read_replay(path: Path) -> dict[str, object]:
     return value
 
 
-def _read_daily_usage(path: Path) -> dict[str, int]:
+def _read_daily_usage(path: Path) -> dict[str, dict[str, object]]:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -207,11 +284,22 @@ def _read_daily_usage(path: Path) -> dict[str, int]:
         raise LLMRunAborted(f"Invalid daily usage counter: {path}") from exc
     if not isinstance(value, dict):
         raise LLMRunAborted(f"Invalid daily usage counter: {path}")
-    return {
-        str(day): int(entry.get("tokens", 0))
-        for day, entry in value.items()
-        if isinstance(entry, dict) and isinstance(entry.get("tokens", 0), int)
-    }
+    daily: dict[str, dict[str, object]] = {}
+    try:
+        for day, entry in value.items():
+            if isinstance(entry, int):
+                daily[str(day)] = {"tokens": entry, "calls": 0}
+            elif isinstance(entry, dict):
+                record: dict[str, object] = {
+                    "tokens": int(entry.get("tokens", 0)),
+                    "calls": int(entry.get("calls", 0)),
+                    "recent": entry.get("recent", []),
+                    "last_request_at": entry.get("last_request_at", 0),
+                }
+                daily[str(day)] = record
+    except (TypeError, ValueError) as exc:
+        raise LLMRunAborted(f"Invalid daily usage counter: {path}") from exc
+    return daily
 
 
 def _atomic_json_write(path: Path, value: object) -> None:
@@ -240,11 +328,13 @@ def _atomic_json_write(path: Path, value: object) -> None:
 def _cache_response(
     path: Path,
     key: str,
+    model: str,
     response: LLMResponse,
 ) -> None:
     with _FILE_LOCK:
         replay = _read_replay(path)
         replay[key] = {
+            "model": model,
             "raw_message": response.raw_message,
             "finish_reason": response.finish_reason,
             "usage": response.usage,
@@ -253,7 +343,11 @@ def _cache_response(
         _atomic_json_write(path, replay)
 
 
-def _load_cached(path: Path, key: str) -> LLMResponse | None:
+def _load_cached(
+    path: Path,
+    key: str,
+    model: str,
+) -> LLMResponse | None:
     with _FILE_LOCK:
         replay = _read_replay(path)
     value = replay.get(key)
@@ -263,6 +357,10 @@ def _load_cached(path: Path, key: str) -> LLMResponse | None:
         value = {"content": value}
     if not isinstance(value, dict):
         raise LLMError(f"Replay response for {key} must be a response object.")
+    if value.get("model") != model:
+        raise ReplayResponseMissing(
+            f"Replay response for request hash {key} does not match model {model}."
+        )
     raw_message = value.get("raw_message", value)
     return _response_from_message(
         raw_message,
@@ -450,10 +548,25 @@ def _wait_for_rate_window(headers: dict[str, str], estimate: int) -> None:
 
 def _daily_tokens(path: Path) -> int:
     daily = _read_daily_usage(path)
-    return daily.get(datetime.now(UTC).date().isoformat(), 0)
+    return int(
+        daily.get(datetime.now(UTC).date().isoformat(), {}).get("tokens", 0)
+    )
 
 
-def _persist_daily_tokens(path: Path, tokens: int) -> None:
+def _daily_calls(path: Path) -> int:
+    daily = _read_daily_usage(path)
+    return int(
+        daily.get(datetime.now(UTC).date().isoformat(), {}).get("calls", 0)
+    )
+
+
+def _persist_daily_usage(
+    path: Path,
+    *,
+    tokens: int = 0,
+    calls: int = 0,
+    event_tokens: int | None = None,
+) -> None:
     with _FILE_LOCK:
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
@@ -465,32 +578,52 @@ def _persist_daily_tokens(path: Path, tokens: int) -> None:
             raise LLMRunAborted(f"Invalid daily usage counter: {path}")
         today = datetime.now(UTC).date().isoformat()
         day_record = existing.get(today)
-        if not isinstance(day_record, dict):
-            day_record = {"tokens": 0}
+        if isinstance(day_record, int):
+            day_record = {"tokens": day_record, "calls": 0, "recent": []}
+        elif not isinstance(day_record, dict):
+            day_record = {"tokens": 0, "calls": 0, "recent": []}
         day_record["tokens"] = int(day_record.get("tokens", 0)) + tokens
+        day_record["calls"] = int(day_record.get("calls", 0)) + calls
+        now = time.time()
+        recent = day_record.get("recent", [])
+        if not isinstance(recent, list):
+            recent = []
+        recent = [
+            event
+            for event in recent
+            if isinstance(event, dict)
+            and isinstance(event.get("at"), (int, float))
+            and now - float(event["at"]) < 60
+        ]
+        if event_tokens is not None:
+            recent.append({"at": now, "tokens": event_tokens})
+            day_record["last_request_at"] = now
+        day_record["recent"] = recent
         existing[today] = day_record
         _atomic_json_write(path, existing)
 
 
-def _record_success(
-    response: LLMResponse,
+def _record_usage(
+    usage: dict[str, int],
     *,
     prompt_estimate: int,
     usage_path: Path,
+    reset_failures: bool,
 ) -> None:
-    reported_tokens = response.usage.get("total_tokens")
+    reported_tokens = usage.get("total_tokens")
     if reported_tokens is None:
         reported_tokens = (
-            response.usage.get("prompt_tokens", prompt_estimate)
-            + response.usage.get("completion_tokens", 0)
+            usage.get("prompt_tokens", prompt_estimate)
+            + usage.get("completion_tokens", 0)
         )
     with _STATE_LOCK:
-        _STATE.consecutive_failures = 0
+        if reset_failures:
+            _STATE.consecutive_failures = 0
         _STATE.tokens += reported_tokens
-        daily_cap = _int_setting("LLM_MAX_TOKENS_PER_DAY", 150000)
+        daily_cap = _int_setting("LLM_MAX_TOKENS_PER_DAY", 200000)
         daily_total = _daily_tokens(usage_path)
-        _persist_daily_tokens(usage_path, reported_tokens)
-        if _STATE.tokens > _int_setting("LLM_MAX_TOKENS_PER_RUN", 150000):
+        _persist_daily_usage(usage_path, tokens=reported_tokens)
+        if _STATE.tokens > _int_setting("LLM_MAX_TOKENS_PER_RUN", 200000):
             _STATE.aborted = True
             raise LLMRunAborted("Per-run token cap reached after provider response.")
         if daily_total + reported_tokens > daily_cap:
@@ -499,6 +632,20 @@ def _record_success(
                 f"Provider response reached the daily token cap "
                 f"({daily_total + reported_tokens}/{daily_cap})."
             )
+
+
+def _record_success(
+    response: LLMResponse,
+    *,
+    prompt_estimate: int,
+    usage_path: Path,
+) -> None:
+    _record_usage(
+        response.usage,
+        prompt_estimate=prompt_estimate,
+        usage_path=usage_path,
+        reset_failures=True,
+    )
 
 
 def _preflight_budgets(
@@ -511,9 +658,11 @@ def _preflight_budgets(
         if _STATE.aborted:
             raise LLMRunAborted("Live LLM run is stopped by its circuit breaker or budget.")
         calls_cap = _int_setting("LLM_MAX_CALLS_PER_RUN", 200)
-        token_cap = _int_setting("LLM_MAX_TOKENS_PER_RUN", 150000)
-        daily_cap = _int_setting("LLM_MAX_TOKENS_PER_DAY", 150000)
+        calls_day_cap = _int_setting("LLM_MAX_CALLS_PER_DAY", 1000)
+        token_cap = _int_setting("LLM_MAX_TOKENS_PER_RUN", 200000)
+        daily_cap = _int_setting("LLM_MAX_TOKENS_PER_DAY", 200000)
         daily_tokens = _daily_tokens(usage_path)
+        daily_calls = _daily_calls(usage_path)
         if daily_tokens >= daily_cap:
             _STATE.aborted = True
             raise LLMRunAborted(
@@ -522,6 +671,19 @@ def _preflight_budgets(
         if _STATE.calls >= calls_cap:
             _STATE.aborted = True
             raise LLMRunAborted(f"Per-run call cap reached ({_STATE.calls}/{calls_cap}).")
+        if daily_calls >= calls_day_cap:
+            _STATE.aborted = True
+            raise LLMRunAborted(
+                f"Daily request cap reached ({daily_calls}/{calls_day_cap})."
+            )
+        request_estimate = input_estimate + max_tokens
+        request_limit = MAX_ESTIMATED_REQUEST_TOKENS
+        if request_estimate > request_limit:
+            _STATE.aborted = True
+            raise LLMRunAborted(
+                f"Estimated request size ({request_estimate} tokens) exceeds "
+                f"the {request_limit}-token safety limit."
+            )
         projected_run = _STATE.tokens + input_estimate + max_tokens
         if projected_run > token_cap:
             _STATE.aborted = True
@@ -536,6 +698,67 @@ def _preflight_budgets(
                 f"Request would exceed daily token cap "
                 f"({projected_day}/{daily_cap}); save progress and resume after UTC reset."
             )
+
+
+def _request_interval(request_tokens: int) -> float:
+    requests_per_minute = _int_setting("LLM_REQUESTS_PER_MINUTE", 30)
+    tokens_per_minute = _int_setting("LLM_TOKENS_PER_MINUTE", 8000)
+    if requests_per_minute <= 0 or tokens_per_minute <= 0:
+        raise LLMRunAborted("Configured per-minute limits must be positive.")
+    configured_gap = _float_setting("LLM_MIN_INTERVAL_SECONDS", 20.1)
+    return max(
+        configured_gap,
+        60 / requests_per_minute,
+        60 * request_tokens / tokens_per_minute,
+    )
+
+
+def _reserve_rolling_window(request_tokens: int) -> None:
+    requests_per_minute = _int_setting("LLM_REQUESTS_PER_MINUTE", 30)
+    tokens_per_minute = _int_setting("LLM_TOKENS_PER_MINUTE", 8000)
+    if request_tokens > tokens_per_minute:
+        raise LLMRunAborted(
+            f"Estimated request size ({request_tokens} tokens) exceeds the "
+            f"{tokens_per_minute}-token rolling minute limit."
+        )
+    while True:
+        now = time.time()
+        with _STATE_LOCK:
+            _STATE.rolling_window = [
+                (timestamp, tokens)
+                for timestamp, tokens in _STATE.rolling_window
+                if now - timestamp < 60
+            ]
+            existing_tokens = sum(tokens for _, tokens in _STATE.rolling_window)
+            if (
+                len(_STATE.rolling_window) < requests_per_minute
+                and existing_tokens + request_tokens <= tokens_per_minute
+            ):
+                _STATE.rolling_window.append((now, request_tokens))
+                return
+
+            expirations = sorted(
+                timestamp + 60 for timestamp, _ in _STATE.rolling_window
+            )
+            wait_seconds: float | None = None
+            for expiry in expirations:
+                surviving = [
+                    (timestamp, tokens)
+                    for timestamp, tokens in _STATE.rolling_window
+                    if timestamp + 60 > expiry
+                ]
+                if (
+                    len(surviving) < requests_per_minute
+                    and sum(tokens for _, tokens in surviving) + request_tokens
+                    <= tokens_per_minute
+                ):
+                    wait_seconds = max(0.001, expiry - now)
+                    break
+        if wait_seconds is None:
+            raise LLMRunAborted(
+                "The rolling minute quota is exhausted and cannot fit this request."
+            )
+        time.sleep(wait_seconds)
 
 
 def _failed_call(message: str) -> LLMError:
@@ -570,10 +793,13 @@ def invoke_chat(
         raise ValueError("LLM_MODE must be 'live' or 'replay'.")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive.")
-    key = request_key(messages)
+    selected_model = model or os.getenv("LLM_MODEL") or os.getenv("MODEL_NAME")
+    if not selected_model:
+        raise LLMError("LLM_MODEL is required for live and replay requests.")
+    key = request_key(messages, selected_model)
     cache_path = _replay_path(replay_path)
     if selected_mode == "replay":
-        cached = _load_cached(cache_path, key)
+        cached = _load_cached(cache_path, key, selected_model)
         if cached is None:
             raise ReplayResponseMissing(
                 f"No replay response for request hash {key}."
@@ -584,12 +810,11 @@ def invoke_chat(
         os.getenv("LLM_NO_CACHE", "").casefold() in {"1", "true", "yes"}
     )
     if not force_fresh:
-        cached = _load_cached(cache_path, key)
+        cached = _load_cached(cache_path, key, selected_model)
         if cached is not None:
             return cached
 
     selected_provider = provider or os.getenv("LLM_PROVIDER", "openai")
-    selected_model = model or os.getenv("LLM_MODEL") or os.getenv("MODEL_NAME")
     selected_api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
     if selected_provider != "openai":
         raise LLMError(
@@ -599,6 +824,10 @@ def invoke_chat(
         raise LLMError("LLM_MODEL is required in live mode.")
     if not selected_api_key:
         raise LLMError("LLM_API_KEY is required in live mode.")
+    with _STATE_LOCK:
+        needs_initialization = not _STATE.initialized
+    if needs_initialization:
+        reset_live_run_state()
     endpoint = (
         base_url or os.getenv("LLM_BASE_URL") or "https://api.openai.com/v1"
     ).rstrip("/")
@@ -610,9 +839,18 @@ def invoke_chat(
     payload: dict[str, object] = {
         "model": selected_model,
         "temperature": 0,
-        "max_tokens": selected_max_tokens,
-        "messages": messages,
+        "messages": _messages_for_model(messages, selected_model),
     }
+    if selected_model.startswith("openai/gpt-oss-"):
+        payload["max_completion_tokens"] = selected_max_tokens
+        reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "low").casefold()
+        if reasoning_effort not in {"low", "medium", "high"}:
+            raise LLMRunAborted(
+                "LLM_REASONING_EFFORT must be low, medium, or high for GPT-OSS."
+            )
+        payload["reasoning_effort"] = reasoning_effort
+    else:
+        payload["max_tokens"] = selected_max_tokens
     if tools:
         payload["tools"] = tools
         payload["tool_choice"] = "auto"
@@ -621,6 +859,7 @@ def invoke_chat(
     if tools:
         budget_messages.append({"role": "tool_schemas", "content": tools})
     prompt_estimate = estimate_tokens(budget_messages)
+    request_estimate = prompt_estimate + selected_max_tokens
     _preflight_budgets(
         input_estimate=prompt_estimate,
         max_tokens=selected_max_tokens,
@@ -631,10 +870,10 @@ def invoke_chat(
     with _STATE_LOCK:
         rate_limits = dict(_LAST_RATE_LIMITS)
     while True:
-        _wait_for_rate_window(rate_limits, prompt_estimate + selected_max_tokens)
-        interval = _float_setting("LLM_MIN_INTERVAL_SECONDS", 2.5)
+        _wait_for_rate_window(rate_limits, request_estimate)
+        interval = _request_interval(request_estimate)
         with _STATE_LOCK:
-            wait_for_gap = interval - (time.monotonic() - _STATE.last_request_at)
+            wait_for_gap = interval - (time.time() - _STATE.last_request_at)
         if wait_for_gap > 0:
             time.sleep(wait_for_gap)
         with _STATE_LOCK:
@@ -642,8 +881,22 @@ def invoke_chat(
             if _STATE.calls >= calls_cap:
                 _STATE.aborted = True
                 raise LLMRunAborted(f"Per-run call cap reached ({calls_cap}).")
+            daily_calls = _daily_calls(usage_path)
+            daily_calls_cap = _int_setting("LLM_MAX_CALLS_PER_DAY", 1000)
+            if daily_calls >= daily_calls_cap:
+                _STATE.aborted = True
+                raise LLMRunAborted(
+                    f"Daily request cap reached ({daily_calls}/{daily_calls_cap})."
+                )
+        _reserve_rolling_window(request_estimate)
+        with _STATE_LOCK:
             _STATE.calls += 1
-            _STATE.last_request_at = time.monotonic()
+            _STATE.last_request_at = time.time()
+            _persist_daily_usage(
+                usage_path,
+                calls=1,
+                event_tokens=request_estimate,
+            )
         try:
             response = requests.post(
                 f"{endpoint}/chat/completions",
@@ -721,6 +974,28 @@ def invoke_chat(
             raise _failed_call(
                 f"LLM response could not be parsed ({type(exc).__name__})."
             ) from None
+        if finish_reason == "length":
+            _record_usage(
+                _normalized_usage(usage),
+                prompt_estimate=prompt_estimate,
+                usage_path=usage_path,
+                reset_failures=False,
+            )
+            raise _failed_call(
+                "LLM response was truncated at its completion-token limit."
+            )
+        if (
+            isinstance(message, dict)
+            and not message.get("tool_calls")
+            and (not isinstance(message.get("content"), str) or not message["content"].strip())
+        ):
+            _record_usage(
+                _normalized_usage(usage),
+                prompt_estimate=prompt_estimate,
+                usage_path=usage_path,
+                reset_failures=False,
+            )
+            raise _failed_call("LLM response was empty and is treated as truncated.")
         latency_ms = (time.perf_counter() - request_started) * 1000
         result = _response_from_message(
             message,
@@ -735,7 +1010,7 @@ def invoke_chat(
             prompt_estimate=prompt_estimate,
             usage_path=usage_path,
         )
-        _cache_response(cache_path, key, result)
+        _cache_response(cache_path, key, selected_model, result)
         return result
 
 

@@ -4,6 +4,7 @@ import argparse
 import csv
 from importlib import import_module
 import json
+from math import ceil
 import os
 import sys
 import time
@@ -187,12 +188,12 @@ def dry_run_projection(
     *,
     repeats: int = 1,
     sample_size: int = 8,
-) -> dict[str, dict[str, int]]:
+) -> dict[str, dict[str, int | float]]:
     from agents.single_agent import _tool_schemas, build_initial_prompt
 
     if repeats < 1 or sample_size < 1:
         raise ValueError("repeats and sample_size must be positive.")
-    projected: dict[str, dict[str, int]] = {}
+    projected: dict[str, dict[str, int | float]] = {}
     for architecture in architectures:
         if architecture != "A":
             raise ValueError(
@@ -276,12 +277,25 @@ def dry_run_projection(
             total_tokens += (
                 first_call_tokens + final_call_tokens + 2 * max_tokens
             ) * case_repeats
+        tokens_per_minute = int(os.getenv("LLM_TOKENS_PER_MINUTE", "8000"))
+        requests_per_minute = int(os.getenv("LLM_REQUESTS_PER_MINUTE", "30"))
+        daily_token_cap = int(os.getenv("LLM_MAX_TOKENS_PER_DAY", "200000"))
+        average_tokens_per_call = total_tokens / total_calls if total_calls else 0
+        derived_minimum_gap = max(
+            60 / requests_per_minute,
+            60 * average_tokens_per_call / tokens_per_minute,
+        )
         projected[architecture] = {
             "cases": len(cases),
             "agent_executions": executions,
             "messages": total_messages,
             "projected_llm_calls": total_calls,
             "estimated_tokens_chars_div_4": total_tokens,
+            "average_estimated_tokens_per_call": average_tokens_per_call,
+            "derived_minimum_gap_seconds": ceil(derived_minimum_gap * 10) / 10,
+            "projected_utc_days_at_daily_cap": ceil(
+                total_tokens / daily_token_cap
+            ),
         }
     return projected
 
@@ -534,7 +548,11 @@ def main(argv: list[str] | None = None) -> int:
                 f"{estimate['agent_executions']} agent executions, "
                 f"{estimate['messages']} prompt messages, "
                 f"{estimate['projected_llm_calls']} projected LLM calls, "
-                f"{estimate['estimated_tokens_chars_div_4']} estimated tokens."
+                f"{estimate['estimated_tokens_chars_div_4']} estimated tokens, "
+                f"{estimate['average_estimated_tokens_per_call']:.1f} estimated "
+                f"tokens/call, {estimate['derived_minimum_gap_seconds']:.1f}s "
+                f"derived minimum gap, and {estimate['projected_utc_days_at_daily_cap']} "
+                "UTC day(s) at the configured daily token cap."
             )
         return 0
 

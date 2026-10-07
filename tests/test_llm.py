@@ -19,6 +19,8 @@ from src.llm import (
     live_run_usage,
     request_key,
     reset_live_run_state,
+    _request_interval,
+    _reserve_rolling_window,
 )
 
 
@@ -33,12 +35,17 @@ class LLMWrapperTests(unittest.TestCase):
             {
                 "LLM_USAGE_PATH": str(self.usage_path),
                 "LLM_REPLAY_PATH": str(self.replay_path),
+                "LLM_MODEL": "assessment-model",
                 "LLM_MIN_INTERVAL_SECONDS": "0",
                 "LLM_MAX_WAIT_SECONDS": "90",
                 "LLM_MAX_TOKENS_PER_DAY": "150000",
                 "LLM_MAX_TOKENS_PER_RUN": "150000",
                 "LLM_MAX_CALLS_PER_RUN": "200",
+                "LLM_MAX_CALLS_PER_DAY": "1000",
+                "LLM_REQUESTS_PER_MINUTE": "1000",
+                "LLM_TOKENS_PER_MINUTE": "1000000",
                 "LLM_MAX_TOKENS": "1200",
+                "LLM_REASONING_EFFORT": "low",
             },
         )
         self.environment.start()
@@ -80,6 +87,7 @@ class LLMWrapperTests(unittest.TestCase):
             json.dumps(
                 {
                     request_key(self.messages): {
+                        "model": "assessment-model",
                         "raw_message": {"content": '{"ok":true}'},
                         "finish_reason": "stop",
                         "usage": {"total_tokens": 9},
@@ -178,12 +186,93 @@ class LLMWrapperTests(unittest.TestCase):
         self.assertEqual(result.usage["prompt_tokens"], 10)
         self.assertEqual(post.call_args.kwargs["json"]["tools"], tool_schema)
 
+    @patch("src.llm.requests.post")
+    def test_gpt_oss_sends_reasoning_effort_and_combined_completion_cap(self, post):
+        response = self._provider_response()
+        response.json.return_value["usage"] = {
+            "prompt_tokens": 10,
+            "completion_tokens": 100,
+            "total_tokens": 110,
+            "completion_tokens_details": {"reasoning_tokens": 70},
+        }
+        post.return_value = response
+
+        result = invoke_chat(
+            self.messages,
+            mode="live",
+            model="openai/gpt-oss-120b",
+            provider="openai",
+            api_key="test-key",
+        )
+
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["reasoning_effort"], "low")
+        self.assertEqual(payload["max_completion_tokens"], 1200)
+        self.assertNotIn("max_tokens", payload)
+        self.assertFalse(
+            any(message["role"] == "system" for message in payload["messages"])
+        )
+        self.assertIn("Return a structured result.", payload["messages"][0]["content"])
+        self.assertEqual(result.usage["reasoning_tokens"], 70)
+        self.assertNotEqual(
+            request_key(self.messages, "assessment-model"),
+            request_key(self.messages, "openai/gpt-oss-120b"),
+        )
+
+    @patch("src.llm.requests.post")
+    def test_gpt_oss_caches_model_name_and_reasoning_usage(self, post):
+        response = self._provider_response()
+        response.json.return_value["usage"] = {
+            "prompt_tokens": 10,
+            "completion_tokens": 100,
+            "total_tokens": 110,
+            "completion_tokens_details": {"reasoning_tokens": 70},
+        }
+        post.return_value = response
+
+        invoke_chat(
+            self.messages,
+            mode="live",
+            model="openai/gpt-oss-120b",
+            provider="openai",
+            api_key="test-key",
+        )
+        record = json.loads(self.replay_path.read_text(encoding="utf-8"))[
+            request_key(self.messages, "openai/gpt-oss-120b")
+        ]
+
+        self.assertEqual(record["model"], "openai/gpt-oss-120b")
+        self.assertEqual(record["usage"]["reasoning_tokens"], 70)
+
+    @patch("src.llm.requests.post")
+    def test_different_model_never_uses_an_existing_cache_entry(self, post):
+        post.return_value = self._provider_response()
+        invoke_chat(
+            self.messages,
+            mode="live",
+            model="model-one",
+            provider="openai",
+            api_key="test-key",
+        )
+
+        result = invoke_chat(
+            self.messages,
+            mode="live",
+            model="model-two",
+            provider="openai",
+            api_key="test-key",
+        )
+
+        self.assertEqual(post.call_count, 2)
+        self.assertFalse(result.cached)
+
     def test_replay_can_supply_tool_call_responses(self):
         replay_file = Path(self.tempdir.name) / "tool_responses.json"
         replay_file.write_text(
             json.dumps(
                 {
                     request_key(self.messages): {
+                        "model": "assessment-model",
                         "content": None,
                         "tool_calls": [
                             {
@@ -262,6 +351,58 @@ class LLMWrapperTests(unittest.TestCase):
 
         self.assertEqual(post.call_count, 1)
 
+    @patch("src.llm.requests.post")
+    def test_request_over_7000_estimated_tokens_is_refused_before_http(self, post):
+        with self.assertRaisesRegex(LLMRunAborted, "7000-token safety limit"):
+            invoke_chat(
+                [{"role": "user", "content": "x" * 24000}],
+                mode="live",
+                provider="openai",
+                model="assessment-model",
+                api_key="test-key",
+            )
+
+        post.assert_not_called()
+
+    @patch("src.llm.requests.post")
+    def test_finish_reason_length_is_truncated_not_cached(self, post):
+        response = self._provider_response()
+        response.json.return_value["choices"][0]["finish_reason"] = "length"
+        post.return_value = response
+
+        with self.assertRaisesRegex(LLMError, "truncated"):
+            invoke_chat(
+                self.messages,
+                mode="live",
+                provider="openai",
+                model="assessment-model",
+                api_key="test-key",
+            )
+
+        self.assertFalse(self.replay_path.exists())
+        self.assertEqual(
+            json.loads(self.usage_path.read_text(encoding="utf-8"))[
+                datetime.now(UTC).date().isoformat()
+            ]["tokens"],
+            12,
+        )
+
+    @patch("src.llm.requests.post")
+    def test_empty_final_content_is_truncated_not_cached(self, post):
+        response = self._provider_response(content=" ")
+        post.return_value = response
+
+        with self.assertRaisesRegex(LLMError, "empty"):
+            invoke_chat(
+                self.messages,
+                mode="live",
+                provider="openai",
+                model="assessment-model",
+                api_key="test-key",
+            )
+
+        self.assertFalse(self.replay_path.exists())
+
     @patch("src.llm.random.uniform", return_value=0)
     @patch("src.llm.time.sleep")
     @patch("src.llm.requests.post")
@@ -280,7 +421,7 @@ class LLMWrapperTests(unittest.TestCase):
             )
 
         self.assertEqual(post.call_count, 5)
-        self.assertEqual(mocked_sleep.call_count, 4)
+        self.assertGreaterEqual(mocked_sleep.call_count, 4)
         self.assertEqual(live_run_usage()["retries"], 4)
         self.assertEqual(_jitter.call_count, 4)
 
@@ -338,6 +479,16 @@ class LLMWrapperTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(LLMRunAborted, "already spent"):
+            reset_live_run_state()
+
+    def test_daily_request_cap_refuses_start(self):
+        today = datetime.now(UTC).date().isoformat()
+        self.usage_path.write_text(
+            json.dumps({today: {"tokens": 0, "calls": 1000}}),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(LLMRunAborted, "request budget is already spent"):
             reset_live_run_state()
 
     @patch("src.llm.requests.post")
@@ -441,6 +592,35 @@ class LLMWrapperTests(unittest.TestCase):
 
         self.assertIn(5.0, [call.args[0] for call in mocked_sleep.call_args_list])
         self.assertEqual(post.call_count, 2)
+
+    @patch("src.llm.time.sleep")
+    def test_rolling_token_window_waits_until_enough_capacity_expires(
+        self, mocked_sleep
+    ):
+        now = 1_000.0
+        with patch.dict(
+            os.environ,
+            {"LLM_TOKENS_PER_MINUTE": "2000", "LLM_REQUESTS_PER_MINUTE": "30"},
+        ):
+            with patch("src.llm.time.time", side_effect=[now, now + 51]):
+                from src.llm import _STATE
+
+                _STATE.rolling_window = [(now - 10, 1500)]
+                _reserve_rolling_window(1000)
+
+        self.assertEqual(mocked_sleep.call_args.args, (50.0,))
+        self.assertEqual(_STATE.rolling_window[-1], (now + 51, 1000))
+
+    def test_dynamic_minimum_gap_is_based_on_tokens_per_minute(self):
+        with patch.dict(
+            os.environ,
+            {
+                "LLM_MIN_INTERVAL_SECONDS": "0",
+                "LLM_TOKENS_PER_MINUTE": "8000",
+                "LLM_REQUESTS_PER_MINUTE": "30",
+            },
+        ):
+            self.assertEqual(_request_interval(3000), 22.5)
 
     @patch("src.llm.requests.post")
     def test_no_cache_forces_a_fresh_live_call(self, post):

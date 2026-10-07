@@ -85,9 +85,18 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-Replay mode is selected by default in `.env.example` and requires no key. Live mode uses Groq's OpenAI-compatible endpoint by default; set `LLM_MODE=live`, `LLM_MODEL`, and `LLM_API_KEY` in `.env`. Never commit `.env`.
+Replay mode is selected by default in `.env.example` and requires no key. Live mode uses Groq's OpenAI-compatible endpoint and `openai/gpt-oss-120b` by default; set `LLM_MODE=live` and `LLM_API_KEY` in `.env`. Never commit `.env`.
 
-Live requests use response rate-limit headers, retry and wait caps, per-run and UTC-day token budgets, an inter-call gap, and a circuit breaker. Successful responses are atomically recorded for replay, and live calls use those records as a cache unless `--no-cache` is selected.
+Live requests use response rate-limit headers, retry and wait caps, per-run and UTC-day request/token budgets, an inter-call gap, and a circuit breaker. Local safeguards use the supplied free-tier limits:
+
+| Provider limit | Local setting |
+|---|---|
+| 30 requests/minute | `LLM_REQUESTS_PER_MINUTE=30` |
+| 1,000 requests/day | `LLM_MAX_CALLS_PER_DAY=1000` |
+| 8,000 tokens/minute | `LLM_TOKENS_PER_MINUTE=8000` |
+| 200,000 tokens/day | `LLM_MAX_TOKENS_PER_DAY=200000` |
+
+Each request is rejected if its estimated input plus completion allowance exceeds 7,000 tokens. The effective inter-call gap is the maximum of the configured calibrated floor, the 30 RPM spacing, and `60 × estimated tokens for this request ÷ 8,000 TPM`. GPT-OSS requests pass `LLM_REASONING_EFFORT` (`low` by default); `LLM_MAX_TOKENS` limits the combined reasoning and answer completion. Reasoning-token usage is retained in traces and run metadata. Truncated or empty final responses fail closed and are not cached. Successful responses are atomically recorded for replay under a model-specific key, and live calls use those records as a cache unless `--no-cache` is selected.
 
 `.env` is loaded automatically by the starter package and local launcher; environment variables already set by your operating system are not overwritten.
 

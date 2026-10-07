@@ -133,6 +133,31 @@ class SingleAgentTests(unittest.TestCase):
         self.assertNotIn('"annual_budget_usd"', serialized)
         self.assertIn("amount evaluated by code", serialized)
 
+    def test_reasoning_tokens_are_retained_in_run_metadata_and_trace(self):
+        tool_response = LLMResponse(
+            content=None,
+            tool_calls=self.tool_calls.tool_calls,
+            finish_reason="tool_calls",
+            usage={"total_tokens": 10, "reasoning_tokens": 6},
+            raw_message={"tool_calls": []},
+        )
+        final_response = LLMResponse(
+            content=self._draft().content,
+            tool_calls=(),
+            finish_reason="stop",
+            usage={"total_tokens": 8, "reasoning_tokens": 3},
+            raw_message={"content": "draft"},
+        )
+
+        decision, trace = run_single_agent(
+            self.request,
+            tools=self.tools,
+            llm=self._queued_responses([tool_response, final_response]),
+        )
+
+        self.assertEqual(decision.meta.reasoning_tokens, 9)
+        self.assertEqual(trace["token_usage"]["reasoning_tokens"], 9)
+
 
 if __name__ == "__main__":
     unittest.main()

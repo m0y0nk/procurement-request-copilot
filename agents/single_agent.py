@@ -581,6 +581,7 @@ def run_single_agent(
                             tracer.events, base_results["llm_calls"]
                         ),
                         "retries": total_usage.get("retries", 0),
+                        "reasoning_tokens": total_usage.get("reasoning_tokens", 0),
                     }
                 )
             }
@@ -628,6 +629,7 @@ def run_single_agent(
                             tracer.events, base_results["llm_calls"]
                         ),
                         "retries": total_usage.get("retries", 0),
+                        "reasoning_tokens": total_usage.get("reasoning_tokens", 0),
                     }
                 ),
                 "tool_statuses": [
@@ -652,6 +654,7 @@ def run_single_agent(
                         tracer.events, base_results["llm_calls"]
                     ),
                     "retries": total_usage.get("retries", 0),
+                    "reasoning_tokens": total_usage.get("reasoning_tokens", 0),
                 }
             )
         }
