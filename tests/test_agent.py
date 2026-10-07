@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 import unittest
+from unittest.mock import Mock, patch
 
-from agents.single_agent import TOOL_NAMES, run_single_agent
+from agents.single_agent import SYSTEM_PROMPT, TOOL_NAMES, run_single_agent
 from src.contracts import ProcurementRequest
 from src.data_access import get_request
 from src.llm import LLMResponse, LLMToolCall, ReplayResponseMissing
@@ -35,6 +36,61 @@ class SingleAgentTests(unittest.TestCase):
             usage={},
             raw_message={"tool_calls": []},
         )
+
+    def test_prompt_names_recommendation_enum_and_exact_catalog_rule(self):
+        for recommendation in (
+            "USE_EXISTING_TOOL",
+            "RECOMMEND_APPROVAL",
+            "REQUEST_MORE_INFO",
+            "ESCALATE_SECURITY",
+            "ESCALATE_FINANCE",
+            "RECOMMEND_REJECTION",
+        ):
+            with self.subTest(recommendation=recommendation):
+                self.assertIn(recommendation, SYSTEM_PROMPT)
+        prompt = " ".join(SYSTEM_PROMPT.split())
+        self.assertIn(
+            "choose USE_EXISTING_TOOL unless the request or evidence shows "
+            "that it does not meet the stated need",
+            prompt,
+        )
+        self.assertIn("next_step must be a string", prompt)
+
+    @patch("tools.procurement.requests.get")
+    def test_model_approval_does_not_discard_deterministic_exact_tool_match(
+        self, get
+    ):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "security_review_status": "approved",
+            "last_review_date": "2026-06-20",
+            "risk_level": "low",
+            "processes_personal_data": True,
+            "stores_data_outside_region": False,
+            "notes": "Current assessment.",
+        }
+        get.return_value = response
+        request_data = get_request("REQ-1001")
+        request_data.update({"request_id": "C-001", "requester_id": "E004"})
+        request = ProcurementRequest.model_validate(request_data)
+        tools = ProcurementTools(retry_backoff_seconds=0)
+
+        decision, _ = run_single_agent(
+            request,
+            tools=tools,
+            llm=self._queued_responses(
+                [self.tool_calls, self._draft("RECOMMEND_APPROVAL")]
+            ),
+        )
+
+        self.assertEqual(decision.recommendation, "USE_EXISTING_TOOL")
+        self.assertEqual(decision.rule_floor, "RECOMMEND_APPROVAL")
+        self.assertEqual(
+            [approval.role for approval in decision.approvals_required],
+            ["Manager", "Privacy"],
+        )
+        self.assertIn("privacy_review_required", {flag.code for flag in decision.risk_flags})
 
     @staticmethod
     def _draft(recommendation: str = "USE_EXISTING_TOOL") -> LLMResponse:

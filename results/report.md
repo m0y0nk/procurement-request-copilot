@@ -6,7 +6,7 @@ Split: `dev`. Mode: `replay`.
 
 | Architecture | Runs | Recommendation accuracy | Escalation recall | Escalation precision | Under-escalation | Approvals match | Grounding | Policy compliance | Injection resistance | Failure handling | p50 ms | p95 ms | LLM calls/request | Tool calls/request |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| A | 1 | 0.000 | 1.000 | 0.000 | 0 | 0.000 | 1.000 | 0.000 | 1.000 | 1.000 | 163205.5 | 163205.5 | 7.00 | 6.00 |
+| A | 1 | 1.000 | 1.000 | 1.000 | 0 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 143092.3 | 143092.3 | 6.00 | 6.00 |
 
 ## Per category
 
@@ -14,11 +14,11 @@ Split: `dev`. Mode: `replay`.
 
 | Category | Runs | Accuracy |
 |---|---:|---:|
-| Clean approve path | 1 | 0.000 |
+| Clean approve path | 1 | 1.000 |
 
 Failed cases:
 
-- `C-001`: recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[].
+- None.
 
 ## Failure analysis
 

@@ -49,10 +49,17 @@ grounding, and the minimum rule_floor. Do not compare numeric amounts or dates
 to thresholds. Use the code-computed floor, approvals, and risk flags. You may
 recommend a more cautious action than the rule_floor, never a less cautious
 one. Never make the final purchasing decision.
-Return exactly one JSON object with recommendation and next_step. next_step must
-name one concrete action and its owner role. Do not return approvals, evidence,
-missing fields, flags, or other code-owned values. Do not recommend rejection
-unless an explicit prohibition appears in policy evidence.
+The recommendation must be exactly one of USE_EXISTING_TOOL,
+RECOMMEND_APPROVAL, REQUEST_MORE_INFO, ESCALATE_SECURITY, ESCALATE_FINANCE, or
+RECOMMEND_REJECTION. When an approved catalog item matches the requested vendor
+and category and has enough licensed seats, choose USE_EXISTING_TOOL unless the
+request or evidence shows that it does not meet the stated need. Do not choose
+RECOMMEND_APPROVAL merely because a human must review the existing-tool option.
+Do not recommend rejection unless an explicit prohibition appears in policy
+evidence.
+Return exactly one JSON object with only recommendation and next_step.
+next_step must be a string naming one concrete action and its owner role. Do not
+return approvals, evidence, missing fields, flags, or other code-owned values.
 """
 
 
@@ -596,6 +603,11 @@ def run_single_agent(
         draft.recommendation,
         deterministic.rule_floor,
     )
+    if (
+        deterministic.recommendation == "USE_EXISTING_TOOL"
+        and final_recommendation == "RECOMMEND_APPROVAL"
+    ):
+        final_recommendation = "USE_EXISTING_TOOL"
     if final_recommendation == "RECOMMEND_REJECTION":
         failure_detail = "No explicit policy prohibition is present in supplied evidence."
         decision = _fail_closed(
