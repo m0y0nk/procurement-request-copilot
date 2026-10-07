@@ -7,6 +7,7 @@ __pycache__/
 evals/results_*.csv
 docs/specs/
 docs/FDE_Assessment_3.md
+docs/FDE_LOG.md
 AGENTS.md
 STUDENT_CHECKLIST.md
 .github/copilot-instructions.md

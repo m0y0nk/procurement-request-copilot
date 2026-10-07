@@ -118,7 +118,7 @@ The import error did not reproduce on immediate sequential retries: preflight pa
 | id | location | symptom | root cause | fix | test |
 |---|---|---|---|---|---|
 | D-01 | `src/solution.py` | Both architectures stop at `NotImplementedError`; public evaluator prints `STOP` on its first case. | Adapter is an empty assessment stub. | Implement the adapter while preserving `handle_request(request_id, architecture)` compatibility. | Regression test calls both architectures and validates the resulting decision schema. |
-| D-02 | `src/contracts.py` | Existing model cannot express the product output contract: recommendation is unconstrained `str`; evidence lacks tool-call ID; approvals/flags are strings; structured human-review, floor, metadata, and required named fields are absent. | Starter contract predates `docs/specs/01-product.md`. | Align typed model and serialization with the reconciled product spec, retaining any public evaluator compatibility required. | Tests validate required fields/enums and reject malformed output. |
+| D-02 | `src/contracts.py` | Existing model cannot express the required product output: recommendation is unconstrained `str`; evidence lacks tool-call ID; approvals/flags are strings; structured human-review, floor, metadata, and required named fields are absent. | Starter contract predates the required product output contract. | Align typed model and serialization with the specified product contract, retaining any public evaluator compatibility required. | Tests validate required fields/enums and reject malformed output. |
 | D-03 | `mock_api/app.py` | A vendor key containing a percent-escape sequence is changed on lookup. Reproduction: add key `Regression%41Vendor`, GET its correctly quoted path `/vendor-risk/Regression%2541Vendor`; response is `404 No vendor-risk record for 'RegressionAVendor'`. | FastAPI has already decoded the path value; endpoint applies `unquote` a second time. | Remove the second decoding step and test a quoted literal percent sequence. | API regression test asserts the exact registered key resolves. |
 | D-04 | `mock_api/app.py` / risk response | Architecture contract asks for `as_of`/expiry, but service only returns `last_review_date`; forced outage has neither. | Mock payload does not carry freshness metadata, and review freshness depends on the fixed policy snapshot. | Normalize assessment freshness in the vendor-status tool from `last_review_date` and the policy reference date; represent outage as unavailable. | Tests cover valid, exactly-365-day, expired, and unavailable records. |
 
@@ -150,12 +150,3 @@ The six public evaluator cases use REQ-1001, REQ-1002, REQ-1003, REQ-1005, REQ-1
 5. Approval names are Manager, Department Head, Procurement, Finance, CFO, Security, Privacy, Legal. The policy names minimum roles but does not prescribe sequential ordering; present business roles in threshold table order and append applicable specialist reviews.
 6. Empty integration arrays mean no integration was requested; they are distinct from an omitted integration field.
 7. The workspace was provided without Git metadata. Initialize Git at this directory for the requested Phase 0 commit; no remote/public repository is configured.
-
-## Changes to specs
-
-| spec | change |
-|---|---|
-| `docs/specs/01-product.md` | Replaced the discovery marker with the retained recommendation enum/approval-role mapping and corrected default precedence so thresholds add approvers but do not alone trigger Finance escalation. Clarified exact catalog reuse and explicit-prohibition conditions. |
-| `docs/specs/02-architecture.md` | Updated vendor tool response description to match upstream fields: `last_review_date`, with freshness normalized by the tool using the fixed snapshot because upstream has no `as_of`/expiry. |
-| `docs/specs/00-discovery.md` | No placeholder remains; retained as the discovery protocol. |
-| `docs/specs/03-eval.md`, `docs/specs/04-deliverables.md` | No discovery markers or contradictions requiring edits. |
