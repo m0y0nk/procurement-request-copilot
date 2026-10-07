@@ -22,7 +22,10 @@ Use the same public evaluation cases for both and defend which architecture you 
 .
 ├── data/                   # Synthetic business data + procurement policy
 ├── mock_api/               # Vendor-risk service used as an external tool
-├── src/                    # Contracts + low-level helpers; NO agent solution
+├── src/                    # Contracts, adapter, and live/replay LLM wrapper
+├── rules/                  # Deterministic policy thresholds and approval chain
+├── tools/                  # Typed procurement evidence tools
+├── guards/                 # Evidence grounding and injection checks
 ├── evals/                  # Six public evaluation cases + runner
 ├── templates/              # Evaluation and decision-memo templates
 ├── docs/                   # Student assignment brief
@@ -32,7 +35,7 @@ Use the same public evaluation cases for both and defend which architecture you 
 └── verify_setup.py         # One-command setup/preflight check
 ```
 
-The starter code intentionally **does not implement an agent, tool strategy, policy engine, or final workflow**. Those choices are part of the assessment.
+The starter begins with no agent or policy engine. The current implementation adds a deterministic adapter, threshold rules, typed evidence tools, basic grounding/injection guards, and an OpenAI-compatible live/replay wrapper. Agent A/B orchestration and the product workflow remain assessment work.
 
 ## Prerequisites
 
@@ -68,7 +71,7 @@ python verify_setup.py
 
 You should see `PRE-FLIGHT PASSED`. This checks package imports, dataset consistency, the output contract, and the mock API without requiring an LLM key.
 
-### 3. Add your LLM credentials
+### 3. Configure the LLM wrapper
 
 **macOS / Linux**
 
@@ -82,9 +85,9 @@ cp .env.example .env
 Copy-Item .env.example .env
 ```
 
-Add only the credentials required by the provider you choose. Never commit `.env`.
+Replay mode is selected by default in `.env.example` and requires no key. Live mode uses the OpenAI-compatible endpoint; set `LLM_MODE=live`, `LLM_MODEL`, and `LLM_API_KEY`. Never commit `.env`.
 
-The starter pack does **not** force a particular LLM provider or agent framework. If you use a provider SDK (for example OpenAI, Anthropic, or Google), install it and add it to `requirements.txt` so your submission works from a clean environment.
+The wrapper currently supports OpenAI-compatible chat completions through the existing `requests` dependency. Other providers require an explicit implementation and tests.
 
 `.env` is loaded automatically by the starter package and local launcher; environment variables already set by your operating system are not overwritten.
 

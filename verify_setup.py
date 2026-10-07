@@ -95,16 +95,17 @@ def check_data() -> None:
 
 
 def check_contract_and_evals() -> None:
-    from src.contracts import EvidenceItem, ProcurementDecision
+    from pydantic import ValidationError
+    from src.contracts import ProcurementDecision
 
-    sample = ProcurementDecision(
-        request_id="REQ-CHECK",
-        recommendation="Manual review",
-        evidence=[EvidenceItem(source="setup", finding="Contract validation works")],
-        next_step="Continue implementation",
-    )
-    if sample.request_id != "REQ-CHECK":
-        fail("ProcurementDecision contract validation failed")
+    try:
+        sample = ProcurementDecision.model_validate_json(
+            (ROOT / "src" / "sample_output.json").read_text(encoding="utf-8")
+        )
+    except (OSError, ValidationError) as exc:
+        fail(f"ProcurementDecision contract validation failed: {exc}")
+    if sample.request_id != "REQ-DEMO":
+        fail("ProcurementDecision sample validation failed")
 
     cases = json.loads((ROOT / "evals" / "public_cases.json").read_text(encoding="utf-8"))
     request_ids = {
