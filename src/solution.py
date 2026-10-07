@@ -6,6 +6,7 @@ from src.contracts import (
     Architecture,
     EvidenceItem,
     HumanReview,
+    ProcurementRequest,
     ProcurementDecision,
     RiskFlag,
     RunMetadata,
@@ -20,20 +21,24 @@ def handle_request(
     request_id: str,
     architecture: Architecture = "single",
 ) -> ProcurementDecision:
-    return analyze_request(get_request(request_id), architecture)
+    request = ProcurementRequest.model_validate(get_request(request_id))
+    return analyze_request(request, architecture)
 
 
 def analyze_request(
-    request: dict,
+    request: ProcurementRequest,
     architecture: Architecture = "single",
+    *,
+    tools: ProcurementTools | None = None,
+    additional_untrusted_texts: list[str] | None = None,
 ) -> ProcurementDecision:
     started = perf_counter()
-    request_id = request["request_id"]
-    tools = ProcurementTools()
+    request_id = request.request_id
+    tools = tools or ProcurementTools()
     evidence: list[EvidenceItem] = []
     risk_flags: list[RiskFlag] = []
 
-    employee_result = tools.get_employee_and_budget(request["requester_id"])
+    employee_result = tools.get_employee_and_budget(request.requester_id)
     if employee_result.status == "success" and employee_result.data is not None:
         employee = employee_result.data
         evidence.append(
@@ -50,9 +55,9 @@ def analyze_request(
         )
 
     catalog_result = tools.search_software_catalog(
-        product_name=request["product_name"],
-        vendor_name=request["vendor_name"],
-        category=request["category"],
+        product_name=request.product_name,
+        vendor_name=request.vendor_name,
+        category=request.category,
     )
     if catalog_result.status == "success" and catalog_result.data is not None:
         for index, item in enumerate(catalog_result.data.matches, start=1):
@@ -77,7 +82,7 @@ def analyze_request(
                 )
             )
 
-    vendor_result = tools.get_vendor_status(request["vendor_name"])
+    vendor_result = tools.get_vendor_status(request.vendor_name)
     vendor = vendor_result.data if vendor_result.status == "success" else None
     if vendor is not None:
         evidence.append(
@@ -127,8 +132,8 @@ def analyze_request(
     employee = employee_result.data
     history_result = tools.get_purchase_history(
         department=employee.department if employee is not None else "",
-        vendor_name=request["vendor_name"],
-        product_name=request["product_name"],
+        vendor_name=request.vendor_name,
+        product_name=request.product_name,
     )
     if history_result.status == "success" and history_result.data is not None:
         for index, record in enumerate(history_result.data.records, start=1):
@@ -148,13 +153,14 @@ def analyze_request(
     missing_fields = [
         field
         for field, value in (
-            ("annual cost", request.get("annual_cost_usd")),
-            ("user count", request.get("user_count")),
-            ("business purpose", request.get("business_justification")),
+            ("vendor", request.vendor_name),
+            ("annual cost", request.annual_cost_usd),
+            ("user count", request.user_count),
+            ("business purpose", request.business_justification),
             (
                 "data access level",
-                request.get("data_access_level")
-                if request.get("data_access_level") != "unknown"
+                request.data_access_level
+                if request.data_access_level != "unknown"
                 else None,
             ),
         )
@@ -162,10 +168,10 @@ def analyze_request(
     ]
     assessment_result = tools.compute_approval_chain(
         request_id=request_id,
-        annual_cost_usd=request.get("annual_cost_usd"),
+        annual_cost_usd=request.annual_cost_usd,
         available_budget_usd=employee.available_usd if employee is not None else None,
         missing_information=missing_fields,
-        data_access_level=request.get("data_access_level"),
+        data_access_level=request.data_access_level,
         security_review_status=(
             vendor.security_review_status if vendor is not None else None
         ),
@@ -178,6 +184,9 @@ def analyze_request(
         legal_terms_status=vendor.legal_terms_status if vendor is not None else None,
         stores_data_outside_region=(
             vendor.stores_data_outside_region if vendor is not None else None
+        ),
+        processes_personal_data=(
+            vendor.processes_personal_data if vendor is not None else None
         ),
     )
     if assessment_result.status == "success" and assessment_result.data is not None:
@@ -201,14 +210,15 @@ def analyze_request(
         )
 
     untrusted_texts = [
-        str(request.get("business_justification", "")),
-        str(request.get("product_name", "")),
-        str(request.get("vendor_name", "")),
+        request.business_justification,
+        request.product_name,
+        request.vendor_name,
     ]
     if vendor is not None:
         untrusted_texts.extend(vendor.notes)
     if catalog_result.data is not None:
         untrusted_texts.extend(item.notes for item in catalog_result.data.matches)
+    untrusted_texts.extend(additional_untrusted_texts or [])
     if scan_untrusted_texts(untrusted_texts):
         risk_flags.append(
             RiskFlag(
@@ -234,14 +244,14 @@ def analyze_request(
         recommendation = "REQUEST_MORE_INFO"
     elif vendor is None:
         recommendation = "ESCALATE_SECURITY"
-    elif request["annual_cost_usd"] is not None and request["user_count"] is not None:
+    elif request.annual_cost_usd is not None and request.user_count is not None:
         exact_cover = next(
             (
                 item for item in (catalog_result.data.matches if catalog_result.data else [])
-                if item.vendor_name.casefold() == request["vendor_name"].casefold()
+                if item.vendor_name.casefold() == request.vendor_name.casefold()
                 and tools.normalize(item.category)
-                == tools.normalize(request["category"])
-                and item.licensed_seats >= request["user_count"]
+                == tools.normalize(request.category)
+                and item.licensed_seats >= request.user_count
                 and item.status.casefold() == "approved"
             ),
             None,

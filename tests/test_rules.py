@@ -106,6 +106,16 @@ class ProcurementRuleTests(unittest.TestCase):
         self.assertTrue({"Security", "Privacy"}.issubset(roles))
         self.assertIn("privacy_review_required", {flag.code for flag in result.risk_flags})
 
+    def test_vendor_personal_data_processing_requires_privacy(self):
+        result = evaluate_procurement_rules(
+            self.facts(processes_personal_data=True)
+        )
+        self.assertIn("Privacy", {approval.role for approval in result.approvals_required})
+        self.assertIn(
+            "privacy_review_required",
+            {flag.code for flag in result.risk_flags},
+        )
+
     def test_new_vendor_legal_boundary_is_inclusive(self):
         at_boundary = evaluate_procurement_rules(
             self.facts(

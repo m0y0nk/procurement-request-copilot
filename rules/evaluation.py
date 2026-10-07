@@ -22,6 +22,7 @@ class ProcurementFacts:
     vendor_is_new: bool = False
     legal_terms_status: str | None = None
     stores_data_outside_region: bool | None = None
+    processes_personal_data: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,7 @@ def evaluate_procurement_rules(facts: ProcurementFacts) -> RuleAssessment:
 
     privacy_required = (
         data_class in {"employee_pii", "customer_pii"}
+        or facts.processes_personal_data is True
         or facts.stores_data_outside_region is True
     )
     if privacy_required:

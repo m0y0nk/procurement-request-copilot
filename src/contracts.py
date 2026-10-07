@@ -27,6 +27,22 @@ class EvidenceItem(BaseModel):
     record_ref: str
 
 
+class ProcurementRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str
+    requester_id: str
+    product_name: str
+    vendor_name: str
+    category: str
+    annual_cost_usd: int | str | None
+    user_count: int | None
+    business_justification: str
+    data_access_level: str
+    requested_integrations: list[str]
+    urgency: str
+
+
 class ApprovalRequired(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -418,6 +418,7 @@ class ProcurementTools:
         vendor_is_new: bool,
         legal_terms_status: str | None,
         stores_data_outside_region: bool | None,
+        processes_personal_data: bool | None = None,
     ) -> ToolResult[ApprovalChainData]:
         try:
             assessment = evaluate_procurement_rules(
@@ -433,6 +434,7 @@ class ProcurementTools:
                     vendor_is_new=vendor_is_new,
                     legal_terms_status=legal_terms_status,
                     stores_data_outside_region=stores_data_outside_region,
+                    processes_personal_data=processes_personal_data,
                 )
             )
         except ValueError as exc:
