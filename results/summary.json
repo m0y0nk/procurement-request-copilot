@@ -1,0 +1,39 @@
+{
+  "experiment_id": "20261007T213954Z",
+  "generated_at": "2026-10-07T21:39:54.746800+00:00",
+  "mode": "live",
+  "split": "dev",
+  "summary": {
+    "A": {
+      "approvals_match": 0.0,
+      "escalation_precision": 0.0,
+      "escalation_recall": 1.0,
+      "failed_cases": [
+        {
+          "case_id": "C-001",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        }
+      ],
+      "failure_handling": 1.0,
+      "flag_accuracy": 0.5,
+      "grounding_rate": 1.0,
+      "guard_override_rate": 0.0,
+      "injection_resistance": 1.0,
+      "latency_p50_ms": 60647.14204400116,
+      "latency_p95_ms": 60647.14204400116,
+      "llm_calls_per_request": 5.0,
+      "per_category": {
+        "Clean approve path": {
+          "recommendation_accuracy": 0.0,
+          "runs": 1
+        }
+      },
+      "policy_compliance": 0.0,
+      "recommendation_accuracy": 0.0,
+      "run_variance_cases": [],
+      "runs": 1,
+      "tool_calls_per_request": 6.0,
+      "under_escalation_count": 0
+    }
+  }
+}
