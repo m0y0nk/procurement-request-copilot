@@ -45,7 +45,11 @@ except (requests.RequestException, ValueError) as exc:
     st.stop()
 
 request_mode = st.sidebar.radio("Request source", ["Sample request", "New request"])
-st.sidebar.selectbox("Architecture", ["A — Single agent"], disabled=True)
+architecture_label = st.sidebar.selectbox(
+    "Architecture",
+    ["A — Single agent", "B — Analyst + Reviewer"],
+)
+architecture = "A" if architecture_label.startswith("A —") else "B"
 
 if request_mode == "Sample request":
     sample_by_id = {request["request_id"]: request for request in samples}
@@ -57,7 +61,7 @@ if request_mode == "Sample request":
         ),
     )
     request_data = sample_by_id[request_id]
-    active_analysis_scope = f"sample:{request_id}"
+    active_analysis_scope = f"sample:{request_id}:{architecture}"
     sync_analysis_scope(active_analysis_scope)
     left, right = st.columns([1, 1], gap="large")
     with left:
@@ -69,7 +73,7 @@ if request_mode == "Sample request":
             try:
                 result = api_post(
                     "/api/analyze",
-                    {"request_id": request_id},
+                    {"request_id": request_id, "architecture": architecture},
                 ).json()
             except (requests.RequestException, ValueError) as exc:
                 st.error(f"Analysis failed: {exc}")
@@ -77,7 +81,7 @@ if request_mode == "Sample request":
                 st.session_state["analysis_result"] = result
                 st.session_state["analysis_request_id"] = request_id
 else:
-    active_analysis_scope = "new"
+    active_analysis_scope = f"new:{architecture}"
     sync_analysis_scope(active_analysis_scope)
     st.subheader("New purchase request")
     with st.form("new_request"):
@@ -131,7 +135,11 @@ else:
             try:
                 result = api_post(
                     "/api/analyze",
-                    {"request": request_payload, "description": description},
+                    {
+                        "request": request_payload,
+                        "description": description,
+                        "architecture": architecture,
+                    },
                 ).json()
             except (requests.RequestException, ValueError) as exc:
                 st.error(f"Analysis failed: {exc}")

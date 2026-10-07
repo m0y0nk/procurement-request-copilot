@@ -3,11 +3,12 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
 from api import create_app
-from src.contracts import ProcurementRequest
+from src.contracts import ProcurementDecision, ProcurementRequest
 from src.solution import analyze_request
 from tools.procurement import ProcurementTools
 
@@ -57,6 +58,32 @@ class ProcurementApiTests(unittest.TestCase):
             "REQ-1001",
         )
         self.assertTrue(response.json()["decision"]["human_review"]["required"])
+
+    @patch("agents.staged_agent.run_staged_agent")
+    def test_architecture_b_routes_to_staged_agent(self, run_agent):
+        decision = ProcurementDecision.model_validate_json(
+            Path("src/sample_output.json").read_text(encoding="utf-8")
+        )
+        run_agent.return_value = (
+            decision,
+            {"architecture_stages": ["analyst", "reviewer"]},
+        )
+
+        response = self.client.post(
+            "/api/analyze",
+            json={
+                "request_id": "REQ-1001",
+                "mode": "replay",
+                "architecture": "B",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json()["trace"]["architecture_stages"],
+            ["analyst", "reviewer"],
+        )
+        run_agent.assert_called_once()
 
     def test_unknown_sample_request_is_not_found(self):
         response = self.client.post(

@@ -76,7 +76,7 @@ class AnalyzePayload(BaseModel):
     request_id: str | None = None
     request: RequestIntake | None = None
     description: str | None = None
-    architecture: Literal["A"] = "A"
+    architecture: Literal["A", "B"] = "A"
     mode: Mode | None = None
 
     @model_validator(mode="after")
@@ -150,7 +150,12 @@ def create_app(
         else:
             request = payload.request.to_request(payload.description or "")
         selected_mode = payload.mode or os.getenv("LLM_MODE", "live")
-        decision, trace = analyzer(request, mode=selected_mode)
+        if payload.architecture == "B":
+            from agents.staged_agent import run_staged_agent
+
+            decision, trace = run_staged_agent(request, mode=selected_mode)
+        else:
+            decision, trace = analyzer(request, mode=selected_mode)
         return AnalysisResponse(decision=decision, trace=trace)
 
     @application.get("/api/decisions", response_model=list[ReviewerDecision])

@@ -14,11 +14,8 @@ def run_case(
     architecture: ArchitectureLabel,
     mode: Mode,
 ) -> dict[str, Any]:
-    if architecture != "A":
-        raise ValueError("Architecture B is not implemented in Phase 3.")
-
-    from agents.single_agent import run_single_agent
-
+    if architecture not in {"A", "B"}:
+        raise ValueError("Architecture must be A or B.")
     tools = ProcurementTools(
         vendor_base_url=(
             "http://127.0.0.1:1" if case.fixture.vendor_service_unavailable else None
@@ -26,7 +23,15 @@ def run_case(
         timeout_seconds=0.05,
         retry_backoff_seconds=0,
     )
-    decision, trace = run_single_agent(
+    if architecture == "A":
+        from agents.single_agent import run_single_agent
+
+        run_agent = run_single_agent
+    else:
+        from agents.staged_agent import run_staged_agent
+
+        run_agent = run_staged_agent
+    decision, trace = run_agent(
         case.procurement_request(),
         mode=mode,
         tools=tools,

@@ -221,11 +221,14 @@ class EvaluationRunnerTests(unittest.TestCase):
     @patch("tools.procurement.requests.get")
     @patch("src.llm.requests.post")
     def test_dry_run_makes_no_http_calls(self, post, get):
-        projection = dry_run_projection([self.case], ("A",))
+        projection = dry_run_projection([self.case], ("A", "B"))
 
         self.assertEqual(projection["A"]["cases"], 1)
         self.assertEqual(projection["A"]["agent_executions"], 1)
         self.assertEqual(projection["A"]["projected_llm_calls"], 2)
+        self.assertEqual(projection["B"]["cases"], 1)
+        self.assertEqual(projection["B"]["agent_executions"], 1)
+        self.assertEqual(projection["B"]["projected_llm_calls"], 3)
         post.assert_not_called()
         get.assert_not_called()
 

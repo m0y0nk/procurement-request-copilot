@@ -23,9 +23,17 @@ class SolutionAdapterTests(unittest.TestCase):
         self.assertEqual(decision, expected)
         run_agent.assert_called_once()
 
-    def test_staged_architecture_is_not_misrepresented_as_architecture_b(self):
-        with self.assertRaisesRegex(NotImplementedError, "not implemented in Phase 3"):
-            handle_request("REQ-1001", architecture="staged")
+    @patch("agents.staged_agent.run_staged_agent")
+    def test_staged_architecture_routes_to_architecture_b(self, run_agent):
+        expected = ProcurementDecision.model_validate_json(
+            Path("src/sample_output.json").read_text(encoding="utf-8")
+        )
+        run_agent.return_value = (expected, {})
+
+        decision = handle_request("REQ-1001", architecture="staged")
+
+        self.assertEqual(decision, expected)
+        run_agent.assert_called_once()
 
     def test_missing_vendor_is_reported_once_with_other_missing_fields(self):
         request_data = get_request("REQ-1001")

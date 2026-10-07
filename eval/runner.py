@@ -221,12 +221,17 @@ def dry_run_projection(
     sample_size: int = 8,
 ) -> dict[str, dict[str, int | float]]:
     from agents.single_agent import _tool_schemas, build_initial_prompt
+    from agents.staged_agent import (
+        ANALYST_SYSTEM_PROMPT,
+        EvidencePack,
+        build_reviewer_prompt,
+    )
 
     if repeats < 1 or sample_size < 1:
         raise ValueError("repeats and sample_size must be positive.")
     projected: dict[str, dict[str, int | float]] = {}
     for architecture in architectures:
-        if architecture != "A":
+        if architecture not in {"A", "B"}:
             raise ValueError(
                 f"Dry-run prompt construction is not implemented for architecture {architecture}."
             )
@@ -235,13 +240,19 @@ def dry_run_projection(
         for case in cases:
             request = case.procurement_request()
             floor = _offline_rule_floor(case, request)
+            untrusted_texts = [
+                case.request,
+                *case.fixture.additional_untrusted_texts,
+            ]
             messages = build_initial_prompt(
                 request,
                 rule_floor=floor,
-                additional_untrusted_texts=[
-                    case.request,
-                    *case.fixture.additional_untrusted_texts,
-                ],
+                additional_untrusted_texts=untrusted_texts,
+                **(
+                    {"system_prompt": ANALYST_SYSTEM_PROMPT}
+                    if architecture == "B"
+                    else {}
+                ),
             )
             followup_messages = list(messages)
             tool_names = (
@@ -301,12 +312,51 @@ def dry_run_projection(
                 len(json.dumps(followup_messages, separators=(",", ":"))) + 3
             ) // 4 + synthetic_tool_reply_tokens
             case_repeats = repeats if case.id in sample_ids else 1
-            total_messages += (len(messages) + len(followup_messages)) * case_repeats
-            total_calls += 2 * case_repeats
+            if architecture == "A":
+                prompt_messages = len(messages) + len(followup_messages)
+                case_calls = 2
+                case_tokens = first_call_tokens + final_call_tokens
+            else:
+                synthetic_events = [
+                    {
+                        "tool_name": name,
+                        "status": "success",
+                        "record_refs": [f"dry-run-{index}"],
+                        "output": {
+                            "status": "success",
+                            "data": {"estimated_output_tokens": 200},
+                        },
+                    }
+                    for index, name in enumerate(tool_names, start=1)
+                ]
+                reviewer_messages = build_reviewer_prompt(
+                    request,
+                    rule_floor=floor,
+                    evidence_pack=EvidencePack(
+                        need_summary="Estimated request need.",
+                        evidence_ids=[],
+                        missing_information=[],
+                    ),
+                    tool_events=synthetic_events,
+                    additional_untrusted_texts=untrusted_texts,
+                )
+                prompt_messages = (
+                    len(messages)
+                    + len(followup_messages)
+                    + len(reviewer_messages)
+                )
+                case_calls = 3
+                case_tokens = (
+                    first_call_tokens
+                    + final_call_tokens
+                    + (len(json.dumps(reviewer_messages, separators=(",", ":"))) + 3) // 4
+                )
+            total_messages += prompt_messages * case_repeats
+            total_calls += case_calls * case_repeats
             executions += case_repeats
             max_tokens = int(os.getenv("LLM_MAX_TOKENS", "1200"))
             total_tokens += (
-                first_call_tokens + final_call_tokens + 2 * max_tokens
+                case_tokens + case_calls * max_tokens
             ) * case_repeats
         tokens_per_minute = int(os.getenv("LLM_TOKENS_PER_MINUTE", "8000"))
         requests_per_minute = int(os.getenv("LLM_REQUESTS_PER_MINUTE", "30"))
