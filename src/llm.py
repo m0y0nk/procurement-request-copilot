@@ -815,15 +815,21 @@ def invoke_chat(
             return cached
 
     selected_provider = provider or os.getenv("LLM_PROVIDER", "openai")
-    selected_api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
+    raw_api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
     if selected_provider != "openai":
         raise LLMError(
             f"Unsupported live LLM provider {selected_provider!r}; configure openai-compatible access."
         )
     if not selected_model:
         raise LLMError("LLM_MODEL is required in live mode.")
-    if not selected_api_key:
+    if not raw_api_key or not raw_api_key.strip().strip("'\""):
         raise LLMError("LLM_API_KEY is required in live mode.")
+    selected_api_key = raw_api_key.strip().strip("'\"")
+    auth_header = (
+        selected_api_key
+        if selected_api_key.startswith("Bearer ")
+        else f"Bearer {selected_api_key}"
+    )
     with _STATE_LOCK:
         needs_initialization = not _STATE.initialized
     if needs_initialization:
@@ -900,7 +906,7 @@ def invoke_chat(
         try:
             response = requests.post(
                 f"{endpoint}/chat/completions",
-                headers={"Authorization": f"Bearer {selected_api_key}"},
+                headers={"Authorization": auth_header},
                 json=payload,
                 timeout=timeout_seconds,
             )

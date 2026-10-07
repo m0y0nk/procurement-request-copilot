@@ -251,6 +251,63 @@ class EvaluationRunnerTests(unittest.TestCase):
         post.assert_not_called()
         get.assert_not_called()
 
+    def test_completed_keys_ignores_failed_checkpoint_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            raw_path = Path(directory) / "checkpoint.jsonl"
+            raw_path.write_text(
+                '{"case_id":"C-001","architecture":"A","repeat":1,"failure_detail":"HTTP 400"}\n'
+                '{"case_id":"C-002","architecture":"A","repeat":1,"decision":{"risk_flags":[{"code":"agent_failed_closed"}]}}\n'
+                '{"case_id":"C-003","architecture":"A","repeat":1,"decision":{"recommendation":"RECOMMEND_APPROVAL"}}\n',
+                encoding="utf-8",
+            )
+
+            completed = _completed_keys(raw_path)
+
+            self.assertEqual(completed, {("C-003", "A", 1)})
+
+    def test_resume_reruns_failed_case_checkpoint(self):
+        invocations = []
+
+        def executor(case, architecture, mode):
+            invocations.append((case.id, architecture, mode))
+            return _trace(case, architecture, mode)
+
+        with tempfile.TemporaryDirectory() as directory:
+            raw_path = Path(directory) / "checkpoint.jsonl"
+            raw_path.write_text(
+                json.dumps(
+                    {
+                        "case_id": "C-001",
+                        "architecture": "A",
+                        "repeat": 1,
+                        "failure_detail": "LLM provider returned HTTP 400.",
+                        "decision": {
+                            "request_id": "C-001",
+                            "failure_detail": "LLM provider returned HTTP 400.",
+                            "risk_flags": [{"code": "agent_failed_closed"}],
+                        },
+                    }
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+
+            resumed = run_resumable_cases(
+                [self.case],
+                executor=executor,
+                architecture="A",
+                mode="replay",
+                repeats=1,
+                raw_path=raw_path,
+                resume=True,
+                case_delay_seconds=0,
+            )
+
+            self.assertEqual(invocations, [("C-001", "A", "replay")])
+            self.assertEqual(len(resumed), 1)
+            self.assertNotIn("failure_detail", resumed[0])
+            self.assertEqual(_completed_keys(raw_path), {("C-001", "A", 1)})
+
 
 if __name__ == "__main__":
     unittest.main()

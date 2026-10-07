@@ -126,6 +126,25 @@ def write_results(
     return raw_path, summary_path, report_path
 
 
+def _is_failed_row(row: dict[str, Any]) -> bool:
+    if not isinstance(row, dict):
+        return True
+    if row.get("failure_detail") or row.get("error"):
+        return True
+    if row.get("status") in {"failed", "error", "unavailable"}:
+        return True
+    decision = row.get("decision")
+    if isinstance(decision, dict):
+        if decision.get("failure_detail") or decision.get("error"):
+            return True
+        risk_flags = decision.get("risk_flags")
+        if isinstance(risk_flags, list):
+            for flag in risk_flags:
+                if isinstance(flag, dict) and flag.get("code") == "agent_failed_closed":
+                    return True
+    return False
+
+
 def _completed_keys(path: Path) -> set[tuple[str, str, int]]:
     if not path.exists():
         return set()
@@ -140,13 +159,15 @@ def _completed_keys(path: Path) -> set[tuple[str, str, int]]:
             continue
         try:
             row = json.loads(line)
-            complete.add(
-                (
-                    str(row["case_id"]),
-                    str(row["architecture"]),
-                    int(row["repeat"]),
-                )
+            key = (
+                str(row["case_id"]),
+                str(row["architecture"]),
+                int(row["repeat"]),
             )
+            if _is_failed_row(row):
+                complete.discard(key)
+            else:
+                complete.add(key)
             if line_number == len(lines) and not line.endswith(b"\n"):
                 with path.open("ab") as output:
                     output.write(b"\n")
@@ -174,12 +195,22 @@ def _append_result(path: Path, trace: dict[str, Any]) -> None:
 def _load_results(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         return []
+    latest: dict[tuple[str, str, int], dict[str, Any]] = {}
+    ordered_keys: list[tuple[str, str, int]] = []
     with path.open(encoding="utf-8") as source:
-        return [
-            json.loads(line)
-            for line in source
-            if line.strip()
-        ]
+        for line in source:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            key = (
+                str(item.get("case_id")),
+                str(item.get("architecture")),
+                int(item.get("repeat", 1)),
+            )
+            if key not in latest:
+                ordered_keys.append(key)
+            latest[key] = item
+    return [latest[k] for k in ordered_keys]
 
 
 def dry_run_projection(
@@ -485,7 +516,10 @@ def run_resumable_cases(
                 "expected": case.expected.model_dump(mode="json"),
             }
             _append_result(raw_path, trace)
-            completed.add(key)
+            if not _is_failed_row(trace):
+                completed.add(key)
+            else:
+                completed.discard(key)
             prior_case_id = case.id
     return _load_results(raw_path)
 

@@ -679,6 +679,57 @@ class LLMWrapperTests(unittest.TestCase):
         self.assertFalse(any(path.suffix == ".tmp" for path in self.replay_path.parent.iterdir()))
         self.assertNotIn("test-key", self.replay_path.read_text(encoding="utf-8"))
 
+    @patch("src.llm.requests.post")
+    def test_live_authorization_header_sends_configured_key_in_memory(self, post):
+        post.return_value = self._provider_response()
+        configured_key = "gsk_live_test_secret_key_abcdef123456"
+
+        invoke_chat(
+            self.messages,
+            mode="live",
+            provider="openai",
+            model="assessment-model",
+            api_key=configured_key,
+        )
+
+        header = post.call_args.kwargs["headers"]["Authorization"]
+        self.assertEqual(header, f"Bearer {configured_key}")
+        self.assertNotIn("******", header)
+
+    @patch("src.llm.requests.post")
+    def test_live_authorization_header_handles_bearer_prefix_and_whitespace(self, post):
+        post.return_value = self._provider_response()
+        raw_key = "  'Bearer gsk_live_test_secret_key_789012'  "
+
+        invoke_chat(
+            self.messages,
+            mode="live",
+            provider="openai",
+            model="assessment-model",
+            api_key=raw_key,
+        )
+
+        header = post.call_args.kwargs["headers"]["Authorization"]
+        self.assertEqual(header, "Bearer gsk_live_test_secret_key_789012")
+
+    @patch("src.llm.requests.post")
+    def test_live_error_output_retains_key_redaction(self, post):
+        secret_key = "gsk_super_secret_leak_probe_key"
+        post.side_effect = requests.RequestException(
+            f"Failed to connect using {secret_key}"
+        )
+
+        with self.assertRaises(LLMError) as raised:
+            invoke_chat(
+                self.messages,
+                mode="live",
+                provider="openai",
+                model="assessment-model",
+                api_key=secret_key,
+            )
+
+        self.assertNotIn(secret_key, str(raised.exception))
+
 
 if __name__ == "__main__":
     unittest.main()
