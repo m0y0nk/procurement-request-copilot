@@ -1,32 +1,41 @@
 {
-  "experiment_id": "20261007T231840Z",
-  "generated_at": "2026-10-07T23:18:40.661656+00:00",
-  "mode": "replay",
+  "experiment_id": "20261007T233221Z",
+  "generated_at": "2026-10-07T23:32:21.593357+00:00",
+  "mode": "live",
   "split": "dev",
   "summary": {
     "A": {
-      "approvals_match": 1.0,
-      "escalation_precision": 1.0,
+      "approvals_match": 0.75,
+      "escalation_precision": 0.0,
       "escalation_recall": 1.0,
-      "failed_cases": [],
+      "failed_cases": [
+        {
+          "case_id": "C-001",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        }
+      ],
       "failure_handling": 1.0,
-      "flag_accuracy": 1.0,
+      "flag_accuracy": 0.9,
       "grounding_rate": 1.0,
       "guard_override_rate": 0.0,
       "injection_resistance": 1.0,
-      "latency_p50_ms": 143092.27320899663,
-      "latency_p95_ms": 143092.27320899663,
-      "llm_calls_per_request": 6.0,
+      "latency_p50_ms": 158004.8693330009,
+      "latency_p95_ms": 197163.18858499837,
+      "llm_calls_per_request": 6.5,
       "per_category": {
         "Clean approve path": {
+          "recommendation_accuracy": 0.6666666666666666,
+          "runs": 3
+        },
+        "Incomplete / ambiguous request": {
           "recommendation_accuracy": 1.0,
           "runs": 1
         }
       },
-      "policy_compliance": 1.0,
-      "recommendation_accuracy": 1.0,
+      "policy_compliance": 0.75,
+      "recommendation_accuracy": 0.75,
       "run_variance_cases": [],
-      "runs": 1,
+      "runs": 4,
       "tool_calls_per_request": 6.0,
       "under_escalation_count": 0
     }
