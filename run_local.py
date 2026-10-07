@@ -60,7 +60,23 @@ def main() -> None:
         )
         procs.append(api_proc)
         wait_for_api("http://127.0.0.1:8001/health", api_proc)
-        print("Vendor-risk API is ready.")
+        print("Vendor-risk service is ready.")
+
+        product_api_proc = start(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "api:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8000",
+            ]
+        )
+        procs.append(product_api_proc)
+        wait_for_api("http://127.0.0.1:8000/health", product_api_proc)
+        print("Procurement API is ready at http://127.0.0.1:8000.")
 
         try:
             __import__("streamlit")

@@ -22,7 +22,11 @@ def handle_request(
     architecture: Architecture = "single",
 ) -> ProcurementDecision:
     request = ProcurementRequest.model_validate(get_request(request_id))
-    return analyze_request(request, architecture)
+    if architecture == "staged":
+        raise NotImplementedError("Architecture B is not implemented in Phase 3.")
+    from agents.single_agent import run_single_agent
+
+    return run_single_agent(request)[0]
 
 
 def analyze_request(

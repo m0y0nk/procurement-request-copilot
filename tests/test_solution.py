@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from src.contracts import ProcurementDecision, ProcurementRequest
 from src.data_access import get_request
@@ -9,12 +11,21 @@ from tools.procurement import ProcurementTools
 
 
 class SolutionAdapterTests(unittest.TestCase):
-    def test_adapter_returns_decision_for_each_architecture(self):
-        for architecture in ("single", "staged"):
-            with self.subTest(architecture=architecture):
-                decision = handle_request("REQ-1001", architecture=architecture)
-                self.assertIsInstance(decision, ProcurementDecision)
-                self.assertTrue(decision.human_review_required)
+    @patch("agents.single_agent.run_single_agent")
+    def test_adapter_routes_architecture_a_to_single_agent(self, run_agent):
+        expected = ProcurementDecision.model_validate_json(
+            Path("src/sample_output.json").read_text(encoding="utf-8")
+        )
+        run_agent.return_value = (expected, {})
+
+        decision = handle_request("REQ-1001", architecture="single")
+
+        self.assertEqual(decision, expected)
+        run_agent.assert_called_once()
+
+    def test_staged_architecture_is_not_misrepresented_as_architecture_b(self):
+        with self.assertRaisesRegex(NotImplementedError, "not implemented in Phase 3"):
+            handle_request("REQ-1001", architecture="staged")
 
     def test_missing_vendor_is_reported_once_with_other_missing_fields(self):
         request_data = get_request("REQ-1001")

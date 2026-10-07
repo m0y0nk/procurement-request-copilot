@@ -8,7 +8,7 @@ from unittest.mock import Mock, patch
 
 import requests
 
-from src.llm import LLMError, ReplayResponseMissing, invoke, request_key
+from src.llm import LLMError, ReplayResponseMissing, invoke, invoke_chat, request_key
 
 
 class LLMWrapperTests(unittest.TestCase):
@@ -69,7 +69,91 @@ class LLMWrapperTests(unittest.TestCase):
             post.call_args.args[0],
             "https://llm.example.test/v1/chat/completions",
         )
+        self.assertEqual(
+            post.call_args.kwargs["headers"]["Authorization"],
+            "Bearer test-key",
+        )
         self.assertEqual(post.call_args.kwargs["timeout"], 30.0)
+
+    @patch("src.llm.requests.post")
+    def test_live_tool_calls_are_parsed_and_forwarded(self, post):
+        response = Mock()
+        response.json.return_value = {
+            "choices": [
+                {
+                    "message": {
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_employee_and_budget",
+                                    "arguments": '{"employee_id":"E001"}',
+                                },
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 2},
+        }
+        post.return_value = response
+        tool_schema = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_employee_and_budget",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+
+        result = invoke_chat(
+            self.messages,
+            mode="live",
+            provider="openai",
+            model="assessment-model",
+            api_key="test-key",
+            tools=tool_schema,
+        )
+
+        self.assertEqual(result.tool_calls[0].name, "get_employee_and_budget")
+        self.assertEqual(result.tool_calls[0].arguments, {"employee_id": "E001"})
+        self.assertEqual(result.usage["prompt_tokens"], 10)
+        self.assertEqual(post.call_args.kwargs["json"]["tools"], tool_schema)
+
+    def test_replay_can_supply_tool_call_responses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            replay_file = Path(directory) / "responses.json"
+            replay_file.write_text(
+                json.dumps(
+                    {
+                        request_key(self.messages): {
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "call-1",
+                                    "function": {
+                                        "name": "get_employee_and_budget",
+                                        "arguments": {"employee_id": "E001"},
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            result = invoke_chat(
+                self.messages,
+                mode="replay",
+                replay_path=replay_file,
+            )
+
+        self.assertEqual(result.tool_calls[0].arguments["employee_id"], "E001")
 
     @patch("src.llm.requests.post")
     def test_live_transport_errors_are_reported(self, post):

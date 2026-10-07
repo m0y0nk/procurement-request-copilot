@@ -9,6 +9,8 @@ from pathlib import Path
 from typing import Any, Callable, Literal
 from uuid import uuid4
 
+from dotenv import load_dotenv
+
 from eval.case_models import EvaluationCase, load_cases
 from eval.scoring import render_report, score_runs
 from src.contracts import ArchitectureLabel
@@ -128,6 +130,7 @@ def _parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    load_dotenv(ROOT / ".env", override=False)
     cases = load_cases()
     selected_cases = [
         case for case in cases if args.split == "all" or case.split == args.split

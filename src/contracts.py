@@ -67,6 +67,15 @@ class HumanReview(BaseModel):
     reason: str
 
 
+class ToolStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    tool_call_id: str
+    tool_name: str
+    status: Literal["success", "unavailable"]
+    reason: str | None = None
+
+
 class RunMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -95,6 +104,8 @@ class ProcurementDecision(BaseModel):
     rule_floor: Recommendation
     human_review: HumanReview
     meta: RunMetadata
+    tool_statuses: list[ToolStatus] = Field(default_factory=list)
+    failure_detail: str | None = None
 
     @property
     def required_approvals(self) -> list[str]:

@@ -70,6 +70,8 @@ class ProcurementDecisionContractTests(unittest.TestCase):
                 "rule_floor",
                 "human_review",
                 "meta",
+                "tool_statuses",
+                "failure_detail",
             },
         )
 
