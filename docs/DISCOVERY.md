@@ -3,7 +3,8 @@
 ## Summary
 The starter is a Python 3.14 procurement scaffold with ten requests, synthetic data, a FastAPI vendor-risk mock, a Streamlit shell, and six public checks.
 The provided preflight and tests pass after installing the declared packages in the ignored project `.venv`.
-The request adapter is unimplemented, the decision model does not match the product contract, and an API outage and stale vendor review are present in sample data.
+At discovery, the request adapter was unimplemented and the decision model did not match the required output; both have since been corrected.
+An API outage and stale vendor review are present in sample data.
 The largest policy risk is treating approval thresholds as escalation outcomes: thresholds determine approvers, while only an actual budget shortfall explicitly routes to a Finance exception.
 
 ## Stack and run commands
@@ -16,7 +17,7 @@ The largest policy risk is treating approval thresholds as escalation outcomes: 
 | Starter run instructions | Create a Python venv, install `requirements.txt`, run `python verify_setup.py`, then `python run_local.py` |
 | Environment used | Python 3.14.2 in `.venv`; the first system-interpreter attempt had no declared dependencies installed. `.venv/` is ignored. |
 | Commands that passed | `.venv/bin/python verify_setup.py` → `PRE-FLIGHT PASSED`; `.venv/bin/python -m unittest discover -s tests -v` → `Ran 10 tests ... OK`; `.venv/bin/python run_local.py` started API on `127.0.0.1:8001` and UI on `localhost:8501` |
-| Public evaluator | `.venv/bin/python evals/run_public_evals.py --architecture single` and `--architecture staged` both returned `STOP  Implement handle_request(...) as part of Assessment 3. Return a ProcurementDecision-compatible object.`; this is the expected unimplemented adapter, not a passing evaluation |
+| Public evaluator | At discovery, both architecture options returned `STOP` at the unimplemented adapter. After the Phase 1 adapter/tool foundation, both options passed all 6 public minimum checks with the mock API running. These are scaffold checks, not the final evaluation. |
 | Git | The extracted directory had no `.git` metadata. A Phase 0 commit requires initializing Git here; no existing history or remote was available. |
 
 Initial run failures:
@@ -115,14 +116,14 @@ The import error did not reproduce on immediate sequential retries: preflight pa
 
 ## Defects
 
-| id | location | symptom | root cause | fix | test |
+| id | location | symptom | root cause | fix | test / current status |
 |---|---|---|---|---|---|
-| D-01 | `src/solution.py` | Both architectures stop at `NotImplementedError`; public evaluator prints `STOP` on its first case. | Adapter is an empty assessment stub. | Implement the adapter while preserving `handle_request(request_id, architecture)` compatibility. | Regression test calls both architectures and validates the resulting decision schema. |
-| D-02 | `src/contracts.py` | Existing model cannot express the required product output: recommendation is unconstrained `str`; evidence lacks tool-call ID; approvals/flags are strings; structured human-review, floor, metadata, and required named fields are absent. | Starter contract predates the required product output contract. | Align typed model and serialization with the specified product contract, retaining any public evaluator compatibility required. | Tests validate required fields/enums and reject malformed output. |
-| D-03 | `mock_api/app.py` | A vendor key containing a percent-escape sequence is changed on lookup. Reproduction: add key `Regression%41Vendor`, GET its correctly quoted path `/vendor-risk/Regression%2541Vendor`; response is `404 No vendor-risk record for 'RegressionAVendor'`. | FastAPI has already decoded the path value; endpoint applies `unquote` a second time. | Remove the second decoding step and test a quoted literal percent sequence. | API regression test asserts the exact registered key resolves. |
-| D-04 | `mock_api/app.py` / risk response | Architecture contract asks for `as_of`/expiry, but service only returns `last_review_date`; forced outage has neither. | Mock payload does not carry freshness metadata, and review freshness depends on the fixed policy snapshot. | Normalize assessment freshness in the vendor-status tool from `last_review_date` and the policy reference date; represent outage as unavailable. | Tests cover valid, exactly-365-day, expired, and unavailable records. |
+| D-01 | `src/solution.py` | Both architectures stopped at `NotImplementedError`; public evaluator printed `STOP` on its first case. | Adapter was an empty assessment stub. | Added a deterministic adapter that calls the tools, applies the rule floor, and preserves human review. | Regression test failed before implementation. Both public architecture options subsequently passed 6/6 minimum checks with the mock API running. |
+| D-02 | `src/contracts.py` | Original model could not express the required output: recommendation was unconstrained; evidence lacked tool-call ID; approvals/flags were strings; human review, floor, and metadata were absent. | Starter contract predates the required decision output. | Added typed recommendation, evidence, approver, risk flag, human-review, and metadata models plus compatibility properties for the existing runner. | Contract tests validate enum, required references, and serialization; setup preflight passed. |
+| D-03 | `mock_api/app.py` | A vendor key containing a percent-escape sequence was changed on lookup. Reproduction: add key `Regression%41Vendor`, GET its correctly quoted path `/vendor-risk/Regression%2541Vendor`; response was `404 No vendor-risk record for 'RegressionAVendor'`. | The framework-decoded path parameter had already changed the literal percent escape; the endpoint also decoded the parameter. | Endpoint now decodes the raw ASGI path once. | Regression test failed before the fix (`404 != 200`) and the focused API suite passed afterward (4 tests). |
+| D-04 | Vendor-risk response / `get_vendor_status` | The mock returns `last_review_date` but no `as_of` or expiry field; NimbusAI failure has no review date. | Upstream response does not carry derived freshness metadata. | Tool computes review age/current status using the fixed policy date and returns explicit unavailability on failures. | Tests check 456-day stale/conflicting SignalWatch, 365-day boundary rule, status normalization, retry and unavailable result. |
 
-No feature code was changed during discovery. The UI, evidence tools, LLM, and reviewer workflow are deliberately incomplete starter surfaces, not counted as separate defects.
+No feature code was changed during discovery. Subsequent Phase 1 work added deterministic rules, typed tools, an LLM wrapper, a functional adapter, and basic grounding/injection checks. The full A/B orchestration and reviewer workflow remain outstanding.
 
 ## Request set coverage
 
