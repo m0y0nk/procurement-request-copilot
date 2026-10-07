@@ -20,8 +20,15 @@ def handle_request(
     request_id: str,
     architecture: Architecture = "single",
 ) -> ProcurementDecision:
+    return analyze_request(get_request(request_id), architecture)
+
+
+def analyze_request(
+    request: dict,
+    architecture: Architecture = "single",
+) -> ProcurementDecision:
     started = perf_counter()
-    request = get_request(request_id)
+    request_id = request["request_id"]
     tools = ProcurementTools()
     evidence: list[EvidenceItem] = []
     risk_flags: list[RiskFlag] = []
@@ -138,7 +145,41 @@ def handle_request(
                 )
             )
 
-    assessment_result = tools.compute_approval_chain(request_id)
+    missing_fields = [
+        field
+        for field, value in (
+            ("annual cost", request.get("annual_cost_usd")),
+            ("user count", request.get("user_count")),
+            ("business purpose", request.get("business_justification")),
+            (
+                "data access level",
+                request.get("data_access_level")
+                if request.get("data_access_level") != "unknown"
+                else None,
+            ),
+        )
+        if value is None or value == ""
+    ]
+    assessment_result = tools.compute_approval_chain(
+        request_id=request_id,
+        annual_cost_usd=request.get("annual_cost_usd"),
+        available_budget_usd=employee.available_usd if employee is not None else None,
+        missing_information=missing_fields,
+        data_access_level=request.get("data_access_level"),
+        security_review_status=(
+            vendor.security_review_status if vendor is not None else None
+        ),
+        security_review_date=vendor.last_review_date if vendor is not None else None,
+        conflicting_vendor_evidence=(
+            vendor.conflicting_evidence if vendor is not None else False
+        ),
+        vendor_risk_unavailable=vendor is None,
+        vendor_is_new=vendor.procurement_status.casefold() == "new" if vendor else True,
+        legal_terms_status=vendor.legal_terms_status if vendor is not None else None,
+        stores_data_outside_region=(
+            vendor.stores_data_outside_region if vendor is not None else None
+        ),
+    )
     if assessment_result.status == "success" and assessment_result.data is not None:
         assessment = assessment_result.data
         floor = assessment.rule_floor
@@ -198,6 +239,8 @@ def handle_request(
             (
                 item for item in (catalog_result.data.matches if catalog_result.data else [])
                 if item.vendor_name.casefold() == request["vendor_name"].casefold()
+                and tools.normalize(item.category)
+                == tools.normalize(request["category"])
                 and item.licensed_seats >= request["user_count"]
                 and item.status.casefold() == "approved"
             ),

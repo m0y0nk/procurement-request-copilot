@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import Mock, patch
 
 import requests
@@ -113,20 +114,22 @@ class ProcurementToolTests(unittest.TestCase):
         self.assertEqual(result.status, "success")
         self.assertEqual([item.purchase_id for item in result.data.records], ["PO-2440"])
 
-    @patch("tools.procurement.requests.get")
-    def test_approval_chain_returns_deterministic_floor(self, get):
-        get.return_value = self.response(
-            {
-                "security_review_status": "approved",
-                "last_review_date": "2026-08-20",
-                "risk_level": "medium",
-                "processes_personal_data": False,
-                "stores_data_outside_region": False,
-                "notes": "Approved for source-code use when repository controls are enabled.",
-            }
-        )
+    def test_approval_chain_returns_deterministic_floor(self):
         tools = self.tools()
-        result = tools.compute_approval_chain("REQ-1003")
+        result = tools.compute_approval_chain(
+            request_id="REQ-1003",
+            annual_cost_usd=18000,
+            available_budget_usd=26000,
+            missing_information=[],
+            data_access_level="source_code",
+            security_review_status="approved",
+            security_review_date=date(2026, 8, 20),
+            conflicting_vendor_evidence=False,
+            vendor_risk_unavailable=False,
+            vendor_is_new=False,
+            legal_terms_status="Approved",
+            stores_data_outside_region=False,
+        )
 
         self.assertEqual(result.status, "success")
         self.assertEqual(result.data.rule_floor, "ESCALATE_SECURITY")
@@ -136,7 +139,7 @@ class ProcurementToolTests(unittest.TestCase):
         )
         self.assertEqual(
             [call.tool_name for call in tools.calls],
-            ["get_vendor_status", "compute_approval_chain"],
+            ["compute_approval_chain"],
         )
 
 

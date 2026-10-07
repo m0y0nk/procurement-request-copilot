@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import csv
-import json
 import re
 import time
 from datetime import date
@@ -176,14 +175,6 @@ class ProcurementTools:
         with (self.data_dir / filename).open(encoding="utf-8", newline="") as file:
             return list(csv.DictReader(file))
 
-    def _request(self, request_id: str) -> dict:
-        with (self.data_dir / "requests.json").open(encoding="utf-8") as file:
-            requests_data = json.load(file)
-        for request in requests_data:
-            if request.get("request_id") == request_id:
-                return request
-        raise KeyError(f"Unknown request_id: {request_id}")
-
     def get_employee_and_budget(self, employee_id: str) -> ToolResult[EmployeeBudgetData]:
         try:
             employee = next(
@@ -219,9 +210,9 @@ class ProcurementTools:
         category: str,
     ) -> ToolResult[CatalogData]:
         terms = {
-            self._normalize(product_name),
-            self._normalize(vendor_name),
-            self._normalize(category),
+            self.normalize(product_name),
+            self.normalize(vendor_name),
+            self.normalize(category),
         } - {""}
         try:
             rows = self._rows("software_catalog.csv")
@@ -239,9 +230,9 @@ class ProcurementTools:
                 for row in rows
                 if terms.intersection(
                     {
-                        self._normalize(row["product_name"]),
-                        self._normalize(row["vendor_name"]),
-                        self._normalize(row["category"]),
+                        self.normalize(row["product_name"]),
+                        self.normalize(row["vendor_name"]),
+                        self.normalize(row["category"]),
                     }
                 )
             ]
@@ -400,8 +391,8 @@ class ProcurementTools:
                 if row["department"].casefold() == department.casefold()
                 and (
                     row["vendor_name"].casefold() == vendor_name.casefold()
-                    or self._normalize(product_name)
-                    in self._normalize(row["product_name"])
+                    or                     self.normalize(product_name)
+                    in self.normalize(row["product_name"])
                 )
             ]
         except (OSError, KeyError, ValueError) as exc:
@@ -412,56 +403,40 @@ class ProcurementTools:
             [record.purchase_id for record in records],
         )
 
-    def compute_approval_chain(self, request_id: str) -> ToolResult[ApprovalChainData]:
+    def compute_approval_chain(
+        self,
+        *,
+        request_id: str,
+        annual_cost_usd: int | str | None,
+        available_budget_usd: int | None,
+        missing_information: list[str],
+        data_access_level: str | None,
+        security_review_status: str | None,
+        security_review_date: date | None,
+        conflicting_vendor_evidence: bool,
+        vendor_risk_unavailable: bool,
+        vendor_is_new: bool,
+        legal_terms_status: str | None,
+        stores_data_outside_region: bool | None,
+    ) -> ToolResult[ApprovalChainData]:
         try:
-            request = self._request(request_id)
-            employee = next(
-                row for row in self._rows("employees.csv")
-                if row["employee_id"] == request["requester_id"]
+            assessment = evaluate_procurement_rules(
+                ProcurementFacts(
+                    annual_cost_usd=annual_cost_usd,
+                    available_budget_usd=available_budget_usd,
+                    missing_information=tuple(missing_information),
+                    data_access_level=data_access_level,
+                    security_review_status=security_review_status,
+                    security_review_date=security_review_date,
+                    conflicting_vendor_evidence=conflicting_vendor_evidence,
+                    vendor_risk_unavailable=vendor_risk_unavailable,
+                    vendor_is_new=vendor_is_new,
+                    legal_terms_status=legal_terms_status,
+                    stores_data_outside_region=stores_data_outside_region,
+                )
             )
-            budget = next(
-                row for row in self._rows("department_budgets.csv")
-                if row["department"] == employee["department"]
-            )
-        except (OSError, KeyError, StopIteration, ValueError) as exc:
+        except ValueError as exc:
             return self._unavailable("compute_approval_chain", str(exc))
-
-        vendor_result = self.get_vendor_status(request["vendor_name"])
-        vendor = vendor_result.data if vendor_result.status == "success" else None
-        data_access = request.get("data_access_level")
-        missing = tuple(
-            field
-            for field, value in (
-                ("annual cost", request.get("annual_cost_usd")),
-                ("user count", request.get("user_count")),
-                ("business purpose", request.get("business_justification")),
-                ("data access level", data_access if data_access != "unknown" else None),
-            )
-            if value is None or value == ""
-        )
-        assessment = evaluate_procurement_rules(
-            ProcurementFacts(
-                annual_cost_usd=request.get("annual_cost_usd"),
-                available_budget_usd=int(budget["available_usd"]),
-                missing_information=missing,
-                data_access_level=data_access,
-                security_review_status=(
-                    vendor.security_review_status if vendor else None
-                ),
-                security_review_date=vendor.last_review_date if vendor else None,
-                conflicting_vendor_evidence=(
-                    vendor.conflicting_evidence if vendor else False
-                ),
-                vendor_risk_unavailable=vendor is None,
-                vendor_is_new=(
-                    vendor.procurement_status.casefold() == "new" if vendor else True
-                ),
-                legal_terms_status=vendor.legal_terms_status if vendor else None,
-                stores_data_outside_region=(
-                    vendor.stores_data_outside_region if vendor else None
-                ),
-            )
-        )
         data = ApprovalChainData(
             rule_floor=assessment.rule_floor,
             approvals_required=list(assessment.approvals_required),
@@ -469,18 +444,15 @@ class ProcurementTools:
             missing_information=list(assessment.missing_information),
             budget_insufficient=assessment.budget_insufficient,
         )
-        refs = [request_id]
-        if vendor_result.status == "success":
-            refs.append(request["vendor_name"])
-        return self._success("compute_approval_chain", data, refs)
+        return self._success("compute_approval_chain", data, [request_id])
 
     @staticmethod
-    def _normalize(value: str) -> str:
+    def normalize(value: str) -> str:
         return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
 
     @classmethod
     def _normalize_vendor_status(cls, value: str) -> str:
-        normalized = cls._normalize(value)
+        normalized = cls.normalize(value)
         return {
             "pending": "not completed",
             "not completed": "not completed",
