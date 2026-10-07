@@ -1,37 +1,65 @@
 {
   "request_id": "REQ-DEMO",
-  "recommendation": "Route for required reviews before approval",
+  "recommendation": "ESCALATE_SECURITY",
+  "next_step": "Security reviewer checks the source-code access controls.",
   "evidence": [
     {
-      "source": "budget_tool",
-      "finding": "Requested cost is within the current department budget",
-      "reference": "DEMO"
+      "id": "e1",
+      "claim": "Requested cost is within the department's available budget.",
+      "source_tool": "get_employee_and_budget",
+      "tool_call_id": "tool-1",
+      "record_ref": "Engineering"
     },
     {
-      "source": "policy_tool",
-      "finding": "Sensitive data use requires Security review",
-      "reference": "Policy section 5"
+      "id": "e2",
+      "claim": "Source-code access requires Security review.",
+      "source_tool": "lookup_policy",
+      "tool_call_id": "tool-2",
+      "record_ref": "POL-SECURITY"
     }
   ],
-  "required_approvals": [
-    "Department Head",
-    "Procurement",
-    "Security"
+  "approvals_required": [
+    {
+      "role": "Department Head",
+      "reason": "Annualized spend is above $10,000 and at or below $25,000.",
+      "rule_id": "POL-APPROVAL-3"
+    },
+    {
+      "role": "Finance",
+      "reason": "Annualized spend is above $10,000 and at or below $25,000.",
+      "rule_id": "POL-APPROVAL-3"
+    },
+    {
+      "role": "Procurement",
+      "reason": "Annualized spend is above $10,000 and at or below $25,000.",
+      "rule_id": "POL-APPROVAL-3"
+    },
+    {
+      "role": "Security",
+      "reason": "The request accesses source code.",
+      "rule_id": "POL-SECURITY"
+    }
   ],
   "missing_information": [],
   "risk_flags": [
-    "security_review_required"
+    {
+      "code": "security_review_required",
+      "severity": "high",
+      "detail": "Source-code access requires Security review.",
+      "evidence_ids": [
+        "e2"
+      ]
+    }
   ],
-  "next_step": "Send the evidence package to Security and Procurement for human review.",
-  "human_review_required": true,
-  "telemetry": {
+  "rule_floor": "ESCALATE_SECURITY",
+  "human_review": {
+    "required": true,
+    "reason": "A human reviewer owns the final purchasing decision."
+  },
+  "meta": {
+    "architecture": "A",
     "llm_calls": 2,
     "tool_calls": 4,
-    "tool_names": [
-      "budget_tool",
-      "software_tool",
-      "vendor_tool",
-      "policy_tool"
-    ]
+    "latency_ms": 0
   }
 }

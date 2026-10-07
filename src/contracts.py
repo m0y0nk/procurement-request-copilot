@@ -1,13 +1,63 @@
 from __future__ import annotations
 
 from typing import Literal
-from pydantic import BaseModel, Field
+
+from pydantic import BaseModel, ConfigDict, Field
+
+Recommendation = Literal[
+    "USE_EXISTING_TOOL",
+    "RECOMMEND_APPROVAL",
+    "REQUEST_MORE_INFO",
+    "ESCALATE_SECURITY",
+    "ESCALATE_FINANCE",
+    "RECOMMEND_REJECTION",
+]
+RiskSeverity = Literal["low", "medium", "high"]
+Architecture = Literal["single", "staged"]
+ArchitectureLabel = Literal["A", "B"]
 
 
 class EvidenceItem(BaseModel):
-    source: str = Field(description="Tool/data source name")
-    finding: str = Field(description="Concise factual finding")
-    reference: str | None = Field(default=None, description="Optional record ID / policy section / endpoint")
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    claim: str
+    source_tool: str
+    tool_call_id: str
+    record_ref: str
+
+
+class ApprovalRequired(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    role: str
+    reason: str
+    rule_id: str
+
+
+class RiskFlag(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str
+    severity: RiskSeverity
+    detail: str
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class HumanReview(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    required: Literal[True] = True
+    reason: str
+
+
+class RunMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    architecture: ArchitectureLabel
+    llm_calls: int = Field(ge=0)
+    tool_calls: int = Field(ge=0)
+    latency_ms: float = Field(ge=0)
 
 
 class RunTelemetry(BaseModel):
@@ -17,30 +67,30 @@ class RunTelemetry(BaseModel):
 
 
 class ProcurementDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     request_id: str
-    recommendation: str = Field(description="Short recommendation label or sentence")
-    evidence: list[EvidenceItem] = Field(default_factory=list)
-    required_approvals: list[str] = Field(default_factory=list)
-    missing_information: list[str] = Field(default_factory=list)
-    risk_flags: list[str] = Field(default_factory=list)
+    recommendation: Recommendation
     next_step: str
-    human_review_required: bool = True
-    telemetry: RunTelemetry | None = None
+    evidence: list[EvidenceItem] = Field(default_factory=list)
+    approvals_required: list[ApprovalRequired] = Field(default_factory=list)
+    missing_information: list[str] = Field(default_factory=list)
+    risk_flags: list[RiskFlag] = Field(default_factory=list)
+    rule_floor: Recommendation
+    human_review: HumanReview
+    meta: RunMetadata
 
+    @property
+    def required_approvals(self) -> list[str]:
+        return [approval.role for approval in self.approvals_required]
 
-Architecture = Literal["single", "staged"]
+    @property
+    def human_review_required(self) -> bool:
+        return self.human_review.required
 
-# Suggested approval names for consistency in evaluation:
-# Manager, Department Head, Procurement, Finance, CFO, Security, Privacy, Legal
-#
-# Suggested risk-flag taxonomy (you may add others):
-# existing_tool_overlap
-# budget_insufficient
-# security_review_required
-# privacy_review_required
-# legal_review_required
-# vendor_review_expired
-# conflicting_vendor_evidence
-# vendor_risk_unavailable
-# prompt_injection_detected
-# missing_information
+    @property
+    def telemetry(self) -> RunTelemetry:
+        return RunTelemetry(
+            llm_calls=self.meta.llm_calls,
+            tool_calls=self.meta.tool_calls,
+        )
