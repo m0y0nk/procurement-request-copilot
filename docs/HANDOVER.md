@@ -14,12 +14,15 @@
 | 5 — Compare and decide | Not started. No valid architecture comparison or holdout run exists. |
 | 6 — Package | Not started. `docs/memo.md` is absent; a clean-clone test is not recorded. |
 
-The current blocker is the failed C-001 live smoke. Four returned tool-call objects were well formed, but the next provider request returned HTTP 400. Do not make another live request until the Authorization and resume defects below are fixed and the user approves the retry.
+The C-001 live request now completes. The root cause was GPT-OSS generating a `json` tool call while only procurement tools were advertised; the wrapper now retries that specific Groq validation error once without tool schemas. The completed case still misses its expected recommendation and approval/flag labels. The replay check completed with no missing responses. Stop before the next live stage and wait for user approval.
 
 The following is the expected `git log -10 --oneline` after the handover commit. Its first line is this document's commit; the other nine entries were verified after evidence commit `24c62b0`:
 
 ```text
 <handover commit> docs: add verified handover
+HEAD (this task): fix: recover from Groq unadvertised tool call
+f3f5a42 fix: sanitize authorization header and rerun failed checkpoints on resume
+938f3e4 docs: add verified handover
 24c62b0 eval: preserve failed C-001 live smoke trace
 0b4b027 feat: enforce Groq GPT-OSS free-tier limits
 3ff4809 feat: add guarded LLM evaluation budgets
@@ -27,21 +30,19 @@ ee27e76 feat: add guarded single-agent procurement product
 a354539 eval: add runner and scorer
 15e1f29 eval: add labelled cases and pre-registered ship rule
 4406b2f refactor: keep approval calculation deterministic
-a5d9b64 feat: wire procurement adapter and guards
-751761a feat: add live and replay LLM wrapper
 ```
 
-At the post-evidence-commit `git status --short`, there were no output lines. The smoke trace, summary, and report were committed as `24c62b0`. The handover docs are committed separately as `docs: add verified handover`; the expected tree after that commit is clean. `.env`, `.cache/`, `eval/replay/`, and `docs/FDE_LOG.md` remain ignored local files by design; none was staged.
+At the post-task-commit `git status --short`, there should be no output lines. The original smoke evidence is committed as `24c62b0`; the current C-001 traces and generated report are recorded in the task commit. `.env`, `.cache/`, `eval/replay/`, and `docs/FDE_LOG.md` remain ignored local files by design; none is staged.
 
 Current verification:
 
 ```text
-Ran 90 tests in 0.415s
+Ran 97 tests in 0.596s
 OK
 PRE-FLIGHT PASSED
 ```
 
-Commands: `./.venv/bin/python -m unittest discover -s tests -v` and `./.venv/bin/python verify_setup.py`. LLM requests in unit tests are stubbed; preflight exercises the local mock API. A full-dev dry-run was also run; it made no HTTP calls.
+The full suite was run as `./.venv/bin/python -m unittest discover -s tests -v`. LLM requests in unit tests are stubbed. `PRE-FLIGHT PASSED` was recorded before this task's fallback change; preflight was not rerun.
 
 ## 2. Decisions already made
 
@@ -99,7 +100,7 @@ The provider is Groq through its OpenAI-compatible endpoint; the selected model 
 
 The estimated request ceiling is a code constant of 7,000 tokens, not an environment variable. The wrapper's request timeout is a function argument defaulting to 30 seconds, not an environment variable. `.env.example` uses `LLM_MODE=replay`; the local `.env` is explicitly set to live.
 
-The free-tier limits supplied by the user are 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day. As read from `.cache/llm_usage.json` for UTC `2026-10-07`, usage is 3,358 provider-reported tokens and 5 requests. The five include the HTTP 400 attempt. This is the local counter, not an account-wide provider statement.
+The free-tier limits supplied by the user are 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day. As read from `.cache/llm_usage.json` for UTC `2026-10-07` after the C-001 run, usage is 14,234 tokens and 24 requests. This is the local counter, not an account-wide provider statement.
 
 The latest full-dev dry-run printed:
 
@@ -109,17 +110,17 @@ Architecture A: 22 cases, 38 agent executions, 418 prompt messages, 76 projected
 
 All dry-run token figures are estimates from serialized characters divided by four plus completion allowance. They are not model usage. The projection is 3,122 tokens above a full 200,000-token day. Current persisted usage leaves 196,642 tokens for this UTC day, so the projection exceeds today's remaining allowance by 6,480 tokens. Runtime usage and caps decide when to pause. The `20.1s` interval is derived from the estimated average and the 8,000 TPM limit.
 
-The prompt-cost audit estimated C-001's nominal two-call input at 3,430 tokens before and 2,496 after. Both are estimates, not provider measurements. No reliable calibration factor is established. One failed live case reported 3,358 aggregate usage tokens over four recorded responses; it is too small and incomplete to calibrate the full-dev estimate.
+The prompt-cost audit estimated C-001's nominal two-call input at 3,430 tokens before and 2,496 after. Both are estimates, not provider measurements. No reliable calibration factor is established. An earlier failed live attempt reported 3,358 aggregate usage tokens over four recorded responses; it is too small and incomplete to calibrate the full-dev estimate.
 
 Live-call evidence:
 
 | Item | Verified state |
 |---|---|
-| Outbound requests | 5 from the UTC daily counter; one C-001 live run. |
-| Successful response records | 4, all with model `openai/gpt-oss-120b`; each returned a well-formed tool-call object. |
-| Failed request | The next request returned HTTP 400; the agent failed closed before completing the tool pass. |
-| Replay file | 4 entries, all for `openai/gpt-oss-120b`. |
-| Traces | Four responses recorded; 116 reasoning tokens reported. No key-shaped string or bearer header was found in committed result files. |
+| Outbound requests | 24 total in the local UTC counter after the live C-001 run. The successful C-001 run used 7 LLM calls, including one fallback retry. |
+| C-001 live result | 6 deterministic tool calls; 7,518 provider-reported tokens, including 294 reasoning tokens; 163,238 ms elapsed. The recommendation was `ESCALATE_SECURITY`, not the expected `USE_EXISTING_TOOL`; approval and flag labels also mismatch. |
+| Replay check | C-001 completed with 7 recorded responses, 7 replay hits, and no `ReplayResponseMissing`; no provider requests were added. |
+| Errors | Earlier attempts failed with the diagnosed Groq `tool_use_failed` error for an unadvertised `json` function. The wrapper's narrow fallback recovered the current run. |
+| Secret check | No key-shaped string or bearer header was found in committed result files. |
 
 ## 4. Eval state
 
@@ -140,7 +141,7 @@ Case counts and category labels were read from `eval/cases/*.json`.
 
 The 37 cases meet the numerical minima and the split is 22 dev / 15 holdout. Coverage gap: C-031 and C-032 are incomplete-review/new-vendor cases, not evidenced blocked-vendor prohibitions; the discovery record says supplied data has no explicit blocked status or prohibited-use rule. Do not treat those labels as proof of a blocked vendor case.
 
-The only raw run is `results/raw/eval_dev_A_live_20261007T213833-ac616b.jsonl`: C-001, Architecture A, dev, repeat 1, live. It is a failed smoke, not a successful evaluation. The generated `results/report.md` and `results/summary.json` contain only that one case and are not a comparison. No replay run, full dev run, Architecture B run, or holdout run exists. Holdout labels have not been run or changed.
+The C-001 Architecture A/dev/repeat 1 live run is in `results/raw/eval_dev_A_live.jsonl`; earlier HTTP 400 attempts remain there, followed by the completed run. The replay verification is in `results/raw/eval_dev_A_replay.jsonl`. Both contain C-001 only. The generated report contains one completed but incorrectly scored case and is not an architecture evaluation or comparison. No full dev run, Architecture B run, or holdout run exists. Holdout labels have not been run or changed.
 
 `--resume` is the runner default. `--fresh` ignores existing result checkpoints. The runner currently treats any JSONL row with a case/architecture/repeat key as completed, even if it contains a failure. The C-001 failure will therefore be skipped by resume unless this behavior is fixed or the retry uses `--fresh`.
 
@@ -171,25 +172,25 @@ There is no standalone report-generation CLI. Each successful runner invocation 
 
 ## 5. Next steps, in order
 
-1. **Fix the Authorization producer and checkpoint semantics.** `src/llm.py` currently sends `Authorization: ******`, and `tests/test_llm.py` expects that literal. The exact cause of the provider's 400 is unverified because its body was not retained. Change the request to use the configured key in memory, keep error output redacted, and test with a fake key. Also make resume skip only successful completed case-runs. Add regression tests for both issues. Run `./.venv/bin/python -m unittest discover -s tests -v` and `./.venv/bin/python verify_setup.py`; commit the fix.
-2. **Recheck the full-dev estimate offline.** Run `./.venv/bin/python -m eval.runner --split dev --arch A --mode live --dry-run`. Confirm the output identifies estimates and makes no HTTP calls.
-3. **Ask the user before retrying live C-001.** If approved, use the single-case live command in section 4. Stop on any malformed tool call, provider error, unexpected budget behavior, or truncation.
-4. **Verify C-001 replay.** Run the replay command in section 4. It must complete without `ReplayResponseMissing` and make zero provider requests.
-5. **Ask before the three-case live stage.** If approved, run `./.venv/bin/python -m eval.runner --split dev --arch A --mode live --cases C-002,C-003,C-004 --limit 3 --repeats 1 --resume`. Stop and report before the full-dev live run.
+1. **Review C-001's recommendation mismatch on dev.** Inspect the stored trace and expected policy evidence. It completed, but its `ESCALATE_SECURITY` recommendation, approval roles, and risk flags differ from the label. Fix only if the traces establish a product defect; otherwise document the label/evidence discrepancy.
+2. **Wait for approval before the next live gate.** The required C-001 live and replay checks are complete. If the user approves, run `./.venv/bin/python -m eval.runner --split dev --arch A --mode live --cases C-002,C-003,C-004 --limit 3 --repeats 1 --resume`.
+3. **Stop after the three-case stage.** Inspect traces and budget counter; report results and wait before the full-dev live evaluation.
+4. **Implement Architecture B.** Do not compare or tune it on holdout.
+5. **Continue the phased plan only after the user says “continue.”** Holdout and repeat stages require explicit approval.
 
 After these five actions, continue the ordered live gates only with user approval at each stop. Implement Architecture B before comparing A/B. Check `.cache/llm_usage.json` before every live stage; the 203,122-token projection spans at least two daily allowances. Do not run holdout without explicit approval.
 
-Open approvals: the failed smoke retry, the three-case run, the full dev run, later sampled repeats if the daily counter permits, and the holdout run. The next agent must request approval before the first fresh live request.
+Open approvals: the three-case live stage, the full dev run, later sampled repeats if the daily counter permits, and the holdout run. The C-001 smoke and replay are complete.
 
 ## 6. Landmines
 
-- `src/llm.py` transmits a redacted literal as Authorization. The accompanying test currently encodes the defect. Fix it before any provider request. The exact HTTP 400 cause remains **UNVERIFIED**.
-- `eval/runner.py::_completed_keys` marks failure rows completed. Resume will skip the failed C-001 row. Fix completion detection; use `--fresh` for the retry until then.
-- Four replay entries do not prove that the whole case can replay. The failed later request was not recorded. Replay check must finish with no `ReplayResponseMissing`.
+- `src/llm.py` retries one exact Groq `tool_use_failed` response without tool schemas. It does not retry unrelated 400 errors or a second fallback 400.
+- `eval/runner.py::_completed_keys` now distinguishes failed rows; earlier failed C-001 traces remain in JSONL, followed by the successful result. The latest row is used for reporting.
+- The recorded C-001 output is replayable with 7 cache hits, but its policy label mismatch remains unresolved.
 - `LLM_MODE` defaults to `live` in the wrapper, although `.env.example` sets replay. Keep replay explicit for offline checks.
 - Usage state is UTC-keyed. Current verified key is `2026-10-07`; do not use the machine's local date for the budget.
 - `docs/FDE_LOG.md`, `.env`, `.cache/`, and `eval/replay/` are ignored intentionally. Keep the key and replay bodies out of Git and output.
-- The smoke trace's report reflects one failed C-001 case only. Do not present its metrics as an architecture result.
+- The current report reflects one C-001 case with a recommendation mismatch. Do not present its metrics as an architecture result.
 - The case category “Blocked vendor / policy violation” has no source-backed blocked-vendor fixture. C-031 and C-032 are not explicit prohibitions.
 - `MASTER_PROMPT.md` is absent. Use the user's 0–6 plan and the stop-after-each-phase instruction.
 

@@ -1,7 +1,7 @@
 {
-  "experiment_id": "20261007T213954Z",
-  "generated_at": "2026-10-07T21:39:54.746800+00:00",
-  "mode": "live",
+  "experiment_id": "20261007T230539Z",
+  "generated_at": "2026-10-07T23:05:39.822585+00:00",
+  "mode": "replay",
   "split": "dev",
   "summary": {
     "A": {
@@ -19,9 +19,9 @@
       "grounding_rate": 1.0,
       "guard_override_rate": 0.0,
       "injection_resistance": 1.0,
-      "latency_p50_ms": 60647.14204400116,
-      "latency_p95_ms": 60647.14204400116,
-      "llm_calls_per_request": 5.0,
+      "latency_p50_ms": 163205.46712399845,
+      "latency_p95_ms": 163205.46712399845,
+      "llm_calls_per_request": 7.0,
       "per_category": {
         "Clean approve path": {
           "recommendation_accuracy": 0.0,

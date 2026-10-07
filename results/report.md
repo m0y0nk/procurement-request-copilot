@@ -1,12 +1,12 @@
 # Evaluation report
 
-Split: `dev`. Mode: `live`.
+Split: `dev`. Mode: `replay`.
 
 ## Overall
 
 | Architecture | Runs | Recommendation accuracy | Escalation recall | Escalation precision | Under-escalation | Approvals match | Grounding | Policy compliance | Injection resistance | Failure handling | p50 ms | p95 ms | LLM calls/request | Tool calls/request |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| A | 1 | 0.000 | 1.000 | 0.000 | 0 | 0.000 | 1.000 | 0.000 | 1.000 | 1.000 | 60647.1 | 60647.1 | 5.00 | 6.00 |
+| A | 1 | 0.000 | 1.000 | 0.000 | 0 | 0.000 | 1.000 | 0.000 | 1.000 | 1.000 | 163205.5 | 163205.5 | 7.00 | 6.00 |
 
 ## Per category
 

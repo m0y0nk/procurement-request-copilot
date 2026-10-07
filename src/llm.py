@@ -430,6 +430,41 @@ def _rate_limits(headers: dict[str, str]) -> dict[str, str]:
     }
 
 
+def _unadvertised_tool_call_name(
+    response: requests.Response,
+    payload: dict[str, object],
+) -> str | None:
+    try:
+        body = response.json()
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(body, dict):
+        return None
+    error = body.get("error")
+    if not isinstance(error, dict) or error.get("code") != "tool_use_failed":
+        return None
+    message = error.get("message")
+    if not isinstance(message, str):
+        return None
+    match = re.search(
+        r"attempted to call tool ['\"]([^'\"]+)['\"] which was not in request\.tools",
+        message,
+    )
+    if match is None:
+        return None
+    tool_schemas = payload.get("tools")
+    advertised_names: set[object] = set()
+    if isinstance(tool_schemas, list):
+        for schema in tool_schemas:
+            if not isinstance(schema, dict):
+                continue
+            function = schema.get("function")
+            if isinstance(function, dict):
+                advertised_names.add(function.get("name"))
+    tool_name = match.group(1)
+    return tool_name if tool_name not in advertised_names else None
+
+
 def _reset_wait(headers: dict[str, str], *, tokens: bool = False) -> float | None:
     suffix = "tokens" if tokens else "requests"
     for key in (f"x-ratelimit-reset-{suffix}", "x-ratelimit-reset"):
@@ -866,16 +901,17 @@ def invoke_chat(
         budget_messages.append({"role": "tool_schemas", "content": tools})
     prompt_estimate = estimate_tokens(budget_messages)
     request_estimate = prompt_estimate + selected_max_tokens
-    _preflight_budgets(
-        input_estimate=prompt_estimate,
-        max_tokens=selected_max_tokens,
-        usage_path=usage_path,
-    )
     request_started = time.perf_counter()
     retries = 0
+    retried_without_tools = False
     with _STATE_LOCK:
         rate_limits = dict(_LAST_RATE_LIMITS)
     while True:
+        _preflight_budgets(
+            input_estimate=prompt_estimate,
+            max_tokens=selected_max_tokens,
+            usage_path=usage_path,
+        )
         _wait_for_rate_window(rate_limits, request_estimate)
         interval = _request_interval(request_estimate)
         with _STATE_LOCK:
@@ -969,6 +1005,23 @@ def invoke_chat(
             time.sleep(wait)
             rate_limits = {}
             continue
+        if status == 400 and not retried_without_tools:
+            if _unadvertised_tool_call_name(response, payload) is not None:
+                payload = {
+                    key: value
+                    for key, value in payload.items()
+                    if key not in {"tools", "tool_choice"}
+                }
+                retried_without_tools = True
+                retries += 1
+                with _STATE_LOCK:
+                    _STATE.retries += 1
+                LOGGER.warning(
+                    "LLM provider rejected an unadvertised tool call; "
+                    "retrying once without tool schemas."
+                )
+                rate_limits = {}
+                continue
         if status < 200 or status >= 300:
             raise _failed_call(f"LLM provider returned HTTP {status}.")
         try:

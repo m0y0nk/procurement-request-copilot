@@ -187,6 +187,74 @@ class LLMWrapperTests(unittest.TestCase):
         self.assertEqual(post.call_args.kwargs["json"]["tools"], tool_schema)
 
     @patch("src.llm.requests.post")
+    def test_unadvertised_json_tool_call_retries_once_without_tools(self, post):
+        rejected = Mock()
+        rejected.status_code = 400
+        rejected.headers = {}
+        rejected.json.return_value = {
+            "error": {
+                "code": "tool_use_failed",
+                "message": (
+                    "Tool call validation failed: attempted to call tool 'json' "
+                    "which was not in request.tools"
+                ),
+            }
+        }
+        post.side_effect = [rejected, self._provider_response()]
+        tool_schema = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_employee_and_budget",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ]
+
+        result = invoke_chat(
+            self.messages,
+            mode="live",
+            provider="openai",
+            model="assessment-model",
+            api_key="test-key",
+            tools=tool_schema,
+        )
+
+        self.assertEqual(result.content, '{"recommendation":"RECOMMEND_APPROVAL"}')
+        self.assertEqual(result.retries, 1)
+        self.assertEqual(post.call_count, 2)
+        self.assertEqual(post.call_args_list[0].kwargs["json"]["tools"], tool_schema)
+        self.assertNotIn("tools", post.call_args_list[1].kwargs["json"])
+        self.assertNotIn("tool_choice", post.call_args_list[1].kwargs["json"])
+
+    @patch("src.llm.requests.post")
+    def test_unadvertised_tool_fallback_does_not_repeat_on_second_400(self, post):
+        rejected = Mock()
+        rejected.status_code = 400
+        rejected.headers = {}
+        rejected.json.return_value = {
+            "error": {
+                "code": "tool_use_failed",
+                "message": (
+                    "attempted to call tool 'json' which was not in request.tools"
+                ),
+            }
+        }
+        post.side_effect = [rejected, rejected]
+
+        with self.assertRaisesRegex(LLMError, "HTTP 400"):
+            invoke_chat(
+                self.messages,
+                mode="live",
+                provider="openai",
+                model="assessment-model",
+                api_key="test-key",
+                tools=[{"type": "function", "function": {"name": "tool"}}],
+            )
+
+        self.assertEqual(post.call_count, 2)
+
+    @patch("src.llm.requests.post")
     def test_gpt_oss_sends_reasoning_effort_and_combined_completion_cap(self, post):
         response = self._provider_response()
         response.json.return_value["usage"] = {
