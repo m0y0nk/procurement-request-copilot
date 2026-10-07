@@ -1,0 +1,14 @@
+vendor_id,vendor_name,procurement_status,security_status,security_review_date,legal_terms_status,notes
+V001,PixelCraft,Approved,Approved,2026-04-12,Approved,Standard vendor
+V002,CreativeSuite Labs,Approved,Approved,2026-01-18,Approved,Standard vendor
+V003,TaskFlow,Approved,Approved,2026-06-03,Approved,Standard vendor
+V004,DocSpace,Approved,Approved,2026-02-24,Approved,Standard vendor
+V005,SignalWatch,Approved,Approved,2025-07-01,Approved,Registry has not yet been refreshed with latest review state
+V006,MetricLoop,Approved,Approved,2026-05-10,Approved,Standard vendor
+V007,HelpDeskly,Approved,Approved,2026-03-15,Approved,Standard vendor
+V008,CodeMate,Approved,Approved,2026-08-20,Approved,Approved for source-code use subject to security controls
+V009,NeuralDesk,Approved,Approved,2026-03-02,Approved,Approved only for permitted data classes
+V010,SignFlow,Approved,Approved,2026-06-20,Approved,Standard vendor
+V011,BrandBoard,New,Pending,,Draft,Not yet through full onboarding
+V012,GrowthForge,New,Pending,,Unknown,No prior contract
+V013,NimbusAI,New,Unknown,,Unknown,Vendor assessment service may be unavailable

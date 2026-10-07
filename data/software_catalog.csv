@@ -1,0 +1,11 @@
+software_id,product_name,category,vendor_name,status,annual_cost_usd,licensed_seats,scope,notes
+SW001,PixelCraft Pro,Design & Creative,PixelCraft,Approved,32000,65,Company-wide,Design and prototyping
+SW002,CreativeSuite,Design & Creative,CreativeSuite Labs,Approved,27000,40,Marketing,Creative production suite
+SW003,TaskFlow,Project Management,TaskFlow,Approved,36000,180,Company-wide,Project and task management
+SW004,DocSpace,Knowledge Management,DocSpace,Approved,24000,200,Company-wide,Knowledge base and docs
+SW005,SignalWatch,Observability,SignalWatch,Approved,80000,80,Engineering,Production monitoring
+SW006,MetricLoop,Analytics / BI,MetricLoop,Approved,52000,55,Company-wide,Dashboards and BI
+SW007,HelpDeskly,Customer Support,HelpDeskly,Approved,46000,75,Customer Success,Support ticketing
+SW008,CodeMate,Developer AI,CodeMate,Approved,90000,120,Engineering,AI coding assistant
+SW009,NeuralDesk Business,General AI,NeuralDesk,Approved - limited use,60000,150,Company-wide,AI assistant; sensitive data restrictions apply
+SW010,SignFlow,E-signature,SignFlow,Approved,16000,45,Company-wide,Electronic signatures

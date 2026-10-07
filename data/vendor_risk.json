@@ -1,0 +1,102 @@
+{
+  "PixelCraft": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-04-12",
+    "processes_personal_data": false,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "CreativeSuite Labs": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-01-18",
+    "processes_personal_data": false,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "TaskFlow": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-06-03",
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "DocSpace": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-02-24",
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "SignalWatch": {
+    "risk_level": "medium",
+    "security_review_status": "expired",
+    "last_review_date": "2025-07-01",
+    "processes_personal_data": false,
+    "stores_data_outside_region": false,
+    "notes": "Reassessment required before expanded production access."
+  },
+  "MetricLoop": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-05-10",
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "HelpDeskly": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-03-15",
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "CodeMate": {
+    "risk_level": "medium",
+    "security_review_status": "approved",
+    "last_review_date": "2026-08-20",
+    "processes_personal_data": false,
+    "stores_data_outside_region": false,
+    "notes": "Approved for source-code use when repository controls are enabled."
+  },
+  "NeuralDesk": {
+    "risk_level": "medium",
+    "security_review_status": "approved",
+    "last_review_date": "2026-03-02",
+    "processes_personal_data": true,
+    "stores_data_outside_region": true,
+    "notes": "Sensitive-data use requires Security and Privacy review."
+  },
+  "SignFlow": {
+    "risk_level": "low",
+    "security_review_status": "approved",
+    "last_review_date": "2026-06-20",
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Current assessment."
+  },
+  "BrandBoard": {
+    "risk_level": "medium",
+    "security_review_status": "not_completed",
+    "last_review_date": null,
+    "processes_personal_data": true,
+    "stores_data_outside_region": false,
+    "notes": "Vendor onboarding incomplete."
+  },
+  "GrowthForge": {
+    "risk_level": "high",
+    "security_review_status": "not_completed",
+    "last_review_date": null,
+    "processes_personal_data": true,
+    "stores_data_outside_region": true,
+    "notes": "New vendor; full security assessment required."
+  },
+  "NimbusAI": {
+    "force_error": true,
+    "error_message": "Upstream vendor assessment provider is temporarily unavailable."
+  }
+}

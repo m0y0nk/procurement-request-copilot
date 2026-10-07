@@ -1,0 +1,37 @@
+{
+  "request_id": "REQ-DEMO",
+  "recommendation": "Route for required reviews before approval",
+  "evidence": [
+    {
+      "source": "budget_tool",
+      "finding": "Requested cost is within the current department budget",
+      "reference": "DEMO"
+    },
+    {
+      "source": "policy_tool",
+      "finding": "Sensitive data use requires Security review",
+      "reference": "Policy section 5"
+    }
+  ],
+  "required_approvals": [
+    "Department Head",
+    "Procurement",
+    "Security"
+  ],
+  "missing_information": [],
+  "risk_flags": [
+    "security_review_required"
+  ],
+  "next_step": "Send the evidence package to Security and Procurement for human review.",
+  "human_review_required": true,
+  "telemetry": {
+    "llm_calls": 2,
+    "tool_calls": 4,
+    "tool_names": [
+      "budget_tool",
+      "software_tool",
+      "vendor_tool",
+      "policy_tool"
+    ]
+  }
+}

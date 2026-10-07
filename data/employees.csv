@@ -1,0 +1,11 @@
+employee_id,name,department,manager_id,level,country
+E001,Sarah Lee,Marketing,E009,IC4,India
+E002,Arjun Mehta,Engineering,E008,IC5,India
+E003,Elena Garcia,Sales,E007,IC3,Spain
+E004,Noah Williams,Finance,E006,IC4,United Kingdom
+E005,Mia Thompson,Customer Success,E007,IC4,United States
+E006,Priya Shah,Finance,E010,Director,India
+E007,Robert King,Go To Market,E010,Director,United States
+E008,Maya Rao,Engineering,E010,Director,India
+E009,David Chen,Marketing,E010,Director,Singapore
+E010,Lisa Park,Operations,,VP,United States

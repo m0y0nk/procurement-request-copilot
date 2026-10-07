@@ -1,0 +1,1 @@
+case_id,architecture,correct_next_action,grounded_evidence,policy_followed,human_escalation_correct,latency_ms,llm_calls,tool_calls,notes

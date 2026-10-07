@@ -1,0 +1,9 @@
+purchase_id,purchase_date,department,vendor_name,product_name,annual_amount_usd,status,notes
+PO-2401,2026-02-14,Marketing,CreativeSuite Labs,CreativeSuite,27000,Approved,Annual renewal
+PO-2418,2026-03-01,Engineering,SignalWatch,SignalWatch,80000,Approved,Annual renewal
+PO-2440,2026-04-18,Engineering,CodeMate,CodeMate,90000,Approved,120 seats
+PO-2457,2026-05-02,Customer Success,HelpDeskly,HelpDeskly,46000,Approved,75 seats
+PO-2472,2026-05-19,Marketing,PixelCraft,PixelCraft Pro,32000,Approved,65 seats
+PO-2501,2026-06-22,Operations,TaskFlow,TaskFlow,36000,Approved,Company-wide agreement
+PO-2513,2026-07-04,Finance,SignFlow,SignFlow,16000,Approved,Company-wide agreement
+PO-2531,2026-07-29,Operations,NeuralDesk,NeuralDesk Business,60000,Approved,Limited-use policy applies

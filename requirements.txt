@@ -1,0 +1,9 @@
+fastapi>=0.115,<1
+uvicorn>=0.30,<1
+pydantic>=2.9,<3
+pandas>=2.2,<3
+requests>=2.32,<3
+python-dotenv>=1.0,<2
+streamlit>=1.40,<2
+httpx>=0.27,<1
+# Add the SDK for the model/provider you choose, e.g. openai / anthropic / google-genai.
