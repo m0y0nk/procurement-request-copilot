@@ -1,0 +1,109 @@
+{
+  "scope": "Architecture A full dev live run and Architecture B partial dev live run",
+  "summary": {
+    "A": {
+      "approvals_match": 1.0,
+      "escalation_precision": 1.0,
+      "escalation_recall": 1.0,
+      "failed_cases": [
+        {
+          "case_id": "C-003",
+          "reason": "recommendation 'REQUEST_MORE_INFO' != 'RECOMMEND_APPROVAL'"
+        }
+      ],
+      "failure_handling": 1.0,
+      "flag_accuracy": 1.0,
+      "grounding_rate": 1.0,
+      "guard_override_rate": 0.0,
+      "injection_resistance": 1.0,
+      "latency_p50_ms": 157965.56079100992,
+      "latency_p95_ms": 161434.03254199438,
+      "llm_calls_per_request": 5.909090909090909,
+      "measured_tokens": 141363,
+      "per_category": {
+        "Approval threshold boundaries": {
+          "recommendation_accuracy": 1.0,
+          "runs": 3
+        },
+        "Clean approve path": {
+          "recommendation_accuracy": 0.6666666666666666,
+          "runs": 3
+        },
+        "Conflicting or expired vendor info": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        },
+        "Existing tool solves it": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        },
+        "Incomplete / ambiguous request": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        },
+        "Security / privacy sensitive": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        }
+      },
+      "policy_compliance": 1.0,
+      "recommendation_accuracy": 0.9545454545454546,
+      "run_variance_cases": [],
+      "runs": 22,
+      "tool_calls_per_request": 6.0,
+      "under_escalation_count": 0
+    },
+    "B": {
+      "approvals_match": 1.0,
+      "escalation_precision": 1.0,
+      "escalation_recall": 1.0,
+      "failed_cases": [
+        {
+          "case_id": "C-001",
+          "reason": "12 evidence item(s) are ungrounded"
+        },
+        {
+          "case_id": "C-002",
+          "reason": "11 evidence item(s) are ungrounded"
+        },
+        {
+          "case_id": "C-003",
+          "reason": "12 evidence item(s) are ungrounded"
+        },
+        {
+          "case_id": "C-004",
+          "reason": "11 evidence item(s) are ungrounded"
+        }
+      ],
+      "failure_handling": 1.0,
+      "flag_accuracy": 1.0,
+      "grounding_rate": 0.4523809523809524,
+      "guard_override_rate": 0.0,
+      "injection_resistance": 1.0,
+      "latency_p50_ms": 177642.709708005,
+      "latency_p95_ms": 201562.1722079959,
+      "llm_calls_per_request": 8.0,
+      "measured_tokens": 36249,
+      "per_category": {
+        "Clean approve path": {
+          "recommendation_accuracy": 1.0,
+          "runs": 3
+        },
+        "Incomplete / ambiguous request": {
+          "recommendation_accuracy": 1.0,
+          "runs": 1
+        }
+      },
+      "policy_compliance": 1.0,
+      "recommendation_accuracy": 1.0,
+      "run_variance_cases": [],
+      "runs": 4,
+      "tool_calls_per_request": 6.0,
+      "under_escalation_count": 0
+    }
+  },
+  "traces": {
+    "A": "results/raw/eval_dev_A_live_20261008T052140-c0c06f.jsonl",
+    "B": "results/raw/eval_dev_B_live.jsonl"
+  }
+}

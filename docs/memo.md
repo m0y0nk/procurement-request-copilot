@@ -1,40 +1,34 @@
-# Architecture decision memo
+# Procurement Copilot evaluation memo
 
-The recommendation is to ship Architecture A.
+The submission cannot select a ship architecture yet: the holdout split has not run, so the pre-registered ship rule cannot be applied.
 
-## Evidence
+## Evidence available
 
-_Numbers will be filled from `results/report.md` after holdout evaluation. No figures are entered by hand._
+The live dev evidence is not a head-to-head comparison. Architecture A completed all 22 dev cases. Architecture B completed only C-001–C-004 with the prompt before the evidence-ID allowlist fix.
 
-| Metric | Arch A dev | Arch B dev | Holdout A | Holdout B |
-|---|---:|---:|---:|---:|
-| Recommendation accuracy | — | — | — | — |
-| Escalation recall | — | — | — | — |
-| Approval match | — | — | — | — |
-| Grounding | — | — | — | — |
-| Injection resistance | — | — | — | — |
-| Median latency (ms) | — | — | — | — |
-| Median LLM calls / request | — | — | — | — |
+| Metric | A, 22 cases | B, 4 cases |
+|---|---:|---:|
+| Recommendation accuracy | 0.955 | 1.000 |
+| Escalation recall | 1.000 | 1.000 |
+| Grounding | 1.000 | 0.452 |
+| Injection resistance | 1.000 | 1.000 |
+| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 177,642.7 / 201,562.2 |
+| LLM calls per request | 5.91 | 8.00 |
+| Measured tokens | 141,363 | 36,249 |
 
-## Why not Architecture B
+The metrics come from `results/dev_checkpoint_report.md` and committed raw traces. B's four cases contain no injection examples, so its injection score does not establish injection performance. Its grounding score is low because the analyst emitted non-canonical evidence identifiers; the updated prompt allowlist has not been verified in a live run. A's only live recommendation mismatch was C-003. A deterministic guard fixed that recommendation in replay, not in the original live measurement.
 
-Architecture B adds a reviewer stage. The same code guards (floor enforcement, ungrounded-evidence dropping, fail-closed schema validation) apply in both architectures; the reviewer's additional pass operates on already-grounded output. B requires ~50% more LLM calls (114 vs 76 projected) and an estimated 39% more tokens (282,284 vs 203,122) per dev run. Unless holdout shows B beats A by at least 1 case on escalation recall or injection resistance — with no loss in recommendation accuracy beyond 1 case — that cost is not justified.
+## Operational decision
 
-_This paragraph will be revised if B meets the pre-registered ship condition._
+Do not ship either architecture based on these results. Keep Architecture A as the current fallback because it completed the dev set with full grounding, but this is not a final selection. Do not infer that B is better from its higher recommendation accuracy on four cases. The current 22-case dry-run estimates 122,988 tokens for A and 165,614 for B; these values are in `results/dev_dry_run.txt`. Those are projections, not measured spend guarantees. The earlier B four-case projection was below measured usage.
 
-## What the guards caught
+The user-provided Groq limits are 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day. The wait guard stopped a fresh B smoke after the provider requested a wait exceeding the configured maximum. No holdout evaluation or additional live run is approved by this memo.
 
-Code enforces the rule floor before accepting any LLM draft. In dev runs, the LLM returned a value below the floor (`RECOMMEND_APPROVAL` where `ESCALATE_SECURITY` was required); the guard raised it and appended `FLOOR_ENFORCED`. The model also returned an unlisted string (`APPROVE`) once; one schema-repair call corrected it without propagating bad output. Injection patterns in request text were detected and surfaced as `prompt_injection_detected` flags without the embedded instructions being followed.
+## Required before final decision
 
-This confirms the division: the LLM is not trusted with threshold arithmetic, freshness comparisons, or approval chain computation. It is trusted only with evidence interpretation and recommendation narrative, bounded by the code-computed floor.
+1. Verify the B evidence-ID prompt fix with an approved, budget-checked live smoke.
+2. Complete matched dev evaluation for B and inspect traces.
+3. Obtain explicit approval before running holdout; preserve its labels.
+4. Apply the pre-registered ship rule to the resulting holdout metrics and record the outcome.
 
-## Risks accepted and what would trigger a revisit
-
-- **One tool call per turn:** The model does not batch tool calls. C-001 used 7 LLM calls; the dry-run projected 2. If measured usage is consistently 3–4× the estimate, the budget plan needs recalibration before the next full run.
-- **Vendor unavailable = new vendor:** When vendor risk is unreachable, `compute_approval_chain` defaults to `vendor_is_new=True`, adding Legal review. Safe direction but may over-escalate.
-- **No blocked-vendor data:** Supplied data has no `Blocked` status. Cases with incomplete vendor reviews produce escalation to review, not rejection.
-
-Revisit if: holdout shows B outperforms A on injection resistance by more than 1 case; call batching reduces B's call-count penalty; or a model update degrades single-turn tool-calling reliability.
-
-Word count: 358
-
+Word count: 386

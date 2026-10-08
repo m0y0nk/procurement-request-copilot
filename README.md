@@ -1,8 +1,10 @@
 # AI Procurement Request Copilot
 
-Inspects software and service purchase requests, gathers evidence with six typed tools, applies deterministic policy rules, and recommends the next action to a human reviewer. All approvals and purchasing decisions stay with people.
+Inspects software and service purchase requests with six typed tools.
+Deterministic policy rules constrain recommendations shown to a human reviewer.
+All approvals and purchasing decisions stay with people.
 
-Two architectures are implemented and evaluated against the same labelled case set: Architecture A (single agent) and Architecture B (staged analyst + reviewer).
+Architecture A (single agent) and Architecture B (staged analyst + reviewer) are implemented. Evaluation is in progress; the current B results cover only four dev cases.
 
 > All companies, vendors, products, employees, prices, policies, and risk signals are synthetic and exist only for this assessment.
 
@@ -13,7 +15,7 @@ Two architectures are implemented and evaluated against the same labelled case s
 ### Prerequisites
 
 - Python 3.11–3.14
-- Ports 8001 (vendor-risk API) and 8501 (UI) must be free
+- Ports 8001 (vendor-risk API), 8000 (procurement API), and 8501 (UI) must be free
 - A Groq API key for live mode; replay mode requires no key
 
 ### Install
@@ -40,28 +42,30 @@ cp .env.example .env
 ### Start
 
 ```bash
-python run_local.py
+make dev
 ```
 
-Starts the vendor-risk mock at `http://127.0.0.1:8001` and the Streamlit UI at `http://127.0.0.1:8501`.
+Starts the vendor-risk mock at `http://127.0.0.1:8001`, the procurement API at `http://127.0.0.1:8000`, and the Streamlit UI at `http://127.0.0.1:8501`. Stop all three with Ctrl+C.
 
 ### Replay mode (no API key)
 
 ```bash
-LLM_MODE=replay python -m eval.runner --split dev --arch A --mode replay
+make eval-dry-run
 ```
 
-Replay responses recorded from live runs are included. The runner prints a dry-run projection without any provider call:
+This estimates selected dev evaluation calls and tokens without contacting a model. To execute a replay:
 
 ```bash
-python -m eval.runner --split dev --arch A --mode live --dry-run
+LLM_MODE=replay python -m eval.runner --split dev --arch A --mode replay --repeats 1
 ```
+
+Replay execution requires `eval/replay/responses.json` from a prior local recording. That cache is gitignored and is not included in a clean clone. The committed evaluation report can be regenerated offline from the committed traces with `make report`.
 
 ---
 
 ## Product workflow
 
-1. Reviewer submits a software purchase request through the UI or API (`POST /requests/analyze`).
+1. Reviewer submits a software purchase request through the UI or API (`POST /api/analyze`).
 2. The agent calls six tools to gather evidence: employee and budget data, software catalog, vendor risk status, policy rules, purchase history, and approval chain.
 3. Deterministic code computes the rule floor (minimum required outcome) from the tool results.
 4. The LLM interprets evidence and drafts a recommendation; it may raise the floor but never lower it.
@@ -152,61 +156,78 @@ All tools return typed results with a `status` field (`success` / `unavailable`)
 
 ### Dataset
 
-37 labelled cases (22 dev, 15 holdout) across 10 categories covering clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run.
+37 labelled cases (22 dev, 15 holdout) across 10 categories cover clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run. Holdout has not been run.
 
 ### How to run
 
 ```bash
-# Offline projection — no API calls
-python -m eval.runner --split dev --arch A --mode live --dry-run
-python -m eval.runner --split dev --arch B --mode live --dry-run
+# Offline projection — no provider calls
+make eval-dry-run
 
-# Dev evaluation — Architecture A
+# Offline report from committed raw traces — no provider calls
+make report
+
+# Live Architecture A dev run — requires Groq credentials and budget approval
 python -m eval.runner --split dev --arch A --mode live --repeats 1 --resume
 
-# Dev evaluation — both architectures
-python -m eval.runner --split dev --arch both --mode live --repeats 1 --resume
+# Resume Architecture B dev — requires Groq credentials, budget, and approval
+python -m eval.runner --split dev --arch B --mode live --repeats 1 --resume
 
-# Holdout — run only after dev is complete and user approves
+# Holdout — not run; requires separate approval
 python -m eval.runner --split holdout --arch both --mode live --repeats 1 --resume
-
-# Replay (no provider calls, uses recorded responses)
-python -m eval.runner --split dev --arch A --mode replay
 ```
 
 Use `--cases C-001,C-002` to target specific cases, `--fresh` to ignore checkpoints, `--no-cache` to skip recorded live responses.
 
-### Dry-run projections (no provider calls made)
+`make report` reads the committed full A dev trace and partial B dev trace, scores them with the same scorer, and writes `results/dev_checkpoint_summary.json` and `results/dev_checkpoint_report.md`. It does not call an LLM or rerun either architecture. Replay evaluation needs the ignored local response cache; a clean clone cannot reproduce inference without recordings or provider access.
 
-| Architecture | Projected LLM calls | Estimated tokens | UTC days at 200k cap |
+### Current dry-run projections
+
+| Architecture | Cases | Projected LLM calls | Estimated tokens |
 |---|---:|---:|---:|
-| A | 76 | 203,122 | 2 |
-| B | 114 | 282,284 | 2 |
+| A | 22 | 44 | 122,988 |
+| B | 22 | 66 | 165,614 |
 
-Token values are estimates (serialized characters ÷ 4 + completion allowance). Actual usage will differ.
+These projections were produced by `make eval-dry-run` after the evidence-ID allowlist prompt change and recorded in [`results/dev_dry_run.txt`](results/dev_dry_run.txt). Token values are estimates from serialized prompt characters divided by four plus the configured completion allowance. The earlier four-case B projection (30,179 tokens) and pre-fix four-case live usage (36,249 measured tokens) are recorded in the local handover/log; do not treat the current estimates as a spend guarantee.
 
-### Results
+### Recorded dev results
 
-_Dev and holdout results tables will be inserted here from `results/report.md` after the evaluation runs complete._
+Metrics below are regenerated from committed live traces in `results/dev_checkpoint_report.md`. A covers all 22 dev cases. B covers only C-001–C-004 and uses the prompt before the evidence-ID allowlist fix. These are not a completed comparison.
+
+The report also records measured token totals: 141,363 for A's 22 cases and 36,249 for B's four cases. The different case counts make total usage incomparable.
+
+| Architecture | Cases | Recommendation accuracy | Escalation recall | Grounding | Injection resistance | p50 latency (ms) | p95 latency (ms) | Measured tokens | LLM calls / request |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A — full dev live | 22 | 0.955 | 1.000 | 1.000 | 1.000 | 157,965.6 | 161,434.0 | 141,363 | 5.91 |
+| B — partial dev live | 4 | 1.000 | 1.000 | 0.452 | 1.000 | 177,642.7 | 201,562.2 | 36,249 | 8.00 |
+
+A's only recommendation mismatch is C-003. The later code guard corrected the recommendation in a full replay, but the live result above is the original measured output. B's four cases all failed grounding: the analyst returned non-canonical evidence identifiers, which code dropped. B's updated evidence-ID prompt has not been verified live. No holdout results exist.
 
 ---
 
 ## Architecture comparison
 
-_A vs B comparison table (recommendation accuracy, escalation recall, grounding, injection resistance, latency, LLM calls per request) will be inserted here from `results/report.md` after both architectures complete their dev and holdout runs._
+| Metric | A — full dev (22 cases) | B — partial dev (4 cases) | Comparison status |
+|---|---:|---:|---|
+| Recommendation accuracy | 0.955 | 1.000 | Different sample sizes; B includes only four clean-path/incomplete cases |
+| Escalation recall | 1.000 | 1.000 | No comparison across full dev coverage |
+| Grounding | 1.000 | 0.452 | B fails on all four old-prompt cases |
+| Injection resistance | 1.000 | 1.000 | B sample contains no injection cases |
+| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 177,642.7 / 201,562.2 | Not a matched comparison |
+| LLM calls / request | 5.91 | 8.00 | B value is from four cases |
 
 ---
 
 ## Ship decision
 
-_One paragraph decision and link to `docs/memo.md` will be inserted here after holdout results are available._
+No architecture is selected for shipment yet. The pre-registered rule is based on holdout, which has not been run; B also has an unresolved grounding failure in its four completed cases. The interim decision memo is in [`docs/memo.md`](docs/memo.md). Do not treat the partial dev results as the final ship decision.
 
 ---
 
 ## Known limitations
 
-- **C-001 replay incomplete:** Call 5 in the C-001 live run returned HTTP 400 and was not recorded. Replay terminates with a missing-response error on that call. A successful complete live run is required to seal the replay file.
+- **Architecture B evidence pack:** C-001–C-004 from the old prompt produced 11–12 non-canonical analyst evidence references each. Code dropped them; all four rows fail grounding. The allowlist prompt change has not been live-verified because the provider wait guard refused the smoke request.
 - **`compute_approval_chain` treats unknown vendor as new:** When vendor risk is unavailable, the tool cannot determine whether the vendor is new; it defaults to `vendor_is_new=True`, which may add Legal review to cases where the vendor is known. This is the safe-failure direction.
-- **Injection detection is heuristic:** The guard checks for pattern keywords; adversarial rephrasing may evade it. Cases C-029, C-030 (injection in vendor notes) and C-031/C-032 are covered by the dev label set.
-- **Architecture B dry-run estimates 2 UTC days:** At 200,000 tokens/day, a full dev run for both architectures spans at least 4 UTC days at current free-tier limits.
+- **Injection detection is heuristic:** The guard checks for pattern keywords; adversarial rephrasing may evade it. Injection cases include C-029 and C-030; the two following new-vendor cases are not evidence of an explicit blocked-vendor prohibition.
+- **Evaluation incomplete:** Architecture A has a full dev run; B has four dev cases only. Holdout has not been run. The B full-dev dry run estimates 165,614 tokens, but the prior four-case B run measured more tokens than its estimate; budget multiple days and retain headroom.
 - **No blocked-vendor fixture:** The supplied data has no `Blocked` procurement status. C-031 and C-032 require review due to incomplete vendor information, not an explicit prohibition. `RECOMMEND_REJECTION` cannot be returned for these cases without evidence of a policy violation.
