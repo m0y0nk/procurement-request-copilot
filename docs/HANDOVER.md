@@ -10,7 +10,7 @@
 | 1 — Fix and foundation | Done and committed. Deterministic rules, typed tools, and the live/replay wrapper exist. |
 | 2 — Eval set | Done and committed. There are 37 labelled cases and a pre-registered ship rule. |
 | 3 — Architecture A and product | Complete for dev. Full live run scored 21/22 before a guard fix; the C-003 trace showed the model misused `REQUEST_MORE_INFO` despite no missing fields. The shared guard now restores the deterministic recommendation; full 22-case replay scores 22/22. |
-| 4 — Architecture B | Two-agent implementation, API/UI selection, runner integration, and dry-run projection are committed. B live dev is partial: C-001–C-004 completed; a C-005 attempt stopped on the configured wait cap. |
+| 4 — Architecture B | Two-agent implementation, API/UI selection, runner integration, and dry-run projection are committed. B live dev is partial: C-001–C-004 completed; a C-005 attempt stopped on the configured wait cap. The analyst prompt now receives an explicit code-generated evidence-ID allowlist; unit tests cover the observed record-reference confusion. This prompt fix has not been live-verified. |
 | 5 — Compare and decide | Not started. B's partial dev results are not comparable to A's full dev result. Holdout has not run. |
 | 6 — Package | README and memo draft exist; clean-clone verification was recorded. Final results, memo count/review, and holdout deliverables remain. |
 
@@ -190,9 +190,9 @@ There is no standalone report-generation CLI. Each successful runner invocation 
 
 ## 5. Next steps, in order
 
-1. **Investigate B grounding offline.** The analyst evidence pack contains no validated evidence IDs, and 11–12 model-provided IDs are dropped per completed case. Correct the prompt/schema handoff using code-grounded IDs or references without exposing code-owned numeric values. Add a regression test and verify on replay/dry-run before more live calls.
-2. **Re-project B after any prompt change.** Today's counter is 179,186 tokens / 186 requests, with 20,814 tokens left. The four-case dry-run estimated 29,784 tokens; the same four cases used 36,249. Do not run another live call today; a 108-second per-minute wait already exceeded the configured 90-second maximum.
-3. **After UTC reset and explicit user approval, resume B dev in bounded chunks.** Plan about 8 cases per 200K-token UTC day as a conservative starting point, then recheck `.cache/llm_usage.json` and dry-run each chunk. Resume is enabled; do not use `--fresh`.
+1. **Verify the prompt fix with a single B dev case after UTC reset and explicit user approval.** Use `--cases C-001 --limit 1 --fresh` so the corrected prompt is not skipped as a completed old row. Inspect the returned analyst IDs and grounding count.
+2. **If C-001 is clean, re-project the remaining B dev cases after prompt changes.** The four-case projection is now 30,179 estimated tokens, but the previous four-case run used 36,249 measured tokens; do not assume the estimate is sufficient. The last counter was 179,186 tokens / 186 requests and the last provider wait request was 108 seconds, above the 90-second cap.
+3. **After the smoke succeeds and with user approval, resume B dev in bounded chunks.** Recheck `.cache/llm_usage.json` and dry-run each chunk; preserve completed rows. Use a separate fresh trace for cases whose prompts changed, because completed rows are skipped under `--resume`.
 4. **After full B dev, compare A and B on dev and inspect traces.** Keep the B four-case checkpoint separate from full A results.
 5. **Do not run holdout or repeats=3 without separate user approval and a fresh budget check.** Preserve all holdout labels.
 
@@ -208,7 +208,7 @@ Open approvals: additional Architecture B live calls after UTC reset, sampled re
 - `results/report.md` and `results/summary.json` are replay-mode metrics after the C-003 guard; the original live metrics are recorded in `results/raw/eval_dev_A_live_20261008T052140-c0c06f.jsonl`.
 - A cache hit in live mode or replay mode retains provider usage in trace metadata; do not sum trace token usage as new spend. Use `.cache/llm_usage.json` for persisted daily budget usage.
 - B's full-dev dry-run undercounted the four-case measured spend by a factor of 1.217 and projected 12 calls where the four completed cases needed 33 provider requests including one retry. Recompute after fixing prompts and leave daily headroom.
-- The analyst stage's invalid evidence IDs are currently removed by code and counted as ungrounded. Do not treat the B partial report's 1.000 recommendation accuracy as a passing grounding result.
+- The four old B live rows were generated before the analyst received its exact evidence-ID allowlist. They contain invalid IDs and remain failures; the updated prompt has only unit-test/dry-run validation so far. Do not count the old rows as proof that the prompt fix worked.
 - The C-005 attempt was interrupted by a 108-second per-minute Retry-After above the 90-second maximum. The run stopped; do not reduce the wait cap or bypass it.
 - C-001 has one completed, correctly scored replay evaluation only. Do not generalize its one-case scores.
 - `LLM_MODE` defaults to `live` in the wrapper, although `.env.example` sets replay. Keep replay explicit for offline checks.

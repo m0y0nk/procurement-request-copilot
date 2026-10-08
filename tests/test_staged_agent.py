@@ -99,7 +99,17 @@ class StagedAgentTests(unittest.TestCase):
         self.assertIsNone(calls[1][1]["tools"])
         self.assertIsNone(calls[2][1]["tools"])
         self.assertIn("Code-computed minimum outcome: RECOMMEND_APPROVAL", calls[2][0][1]["content"])
+        allowed_ids = json.dumps(
+            sorted(item.id for item in decision.evidence),
+            separators=(",", ":"),
+        )
+        self.assertIn(
+            f"Allowed evidence IDs (code-generated): {allowed_ids}",
+            calls[0][0][0]["content"],
+        )
+        self.assertIn("Tool record references", calls[0][0][0]["content"])
         self.assertEqual(trace["analyst_evidence_pack"]["evidence_ids"], ["e-budget", "e-catalog-1"])
+        self.assertEqual(trace["ungrounded_evidence_count"], 0)
 
     def test_floor_and_ungrounded_analyst_references_are_guarded(self):
         responses = [
@@ -109,7 +119,7 @@ class StagedAgentTests(unittest.TestCase):
                     {
                         "need_summary": "Need signing service.",
                         "tool_results": list(TOOL_NAMES),
-                        "evidence_ids": ["not-grounded"],
+                        "evidence_ids": ["E004", "Finance", "C-001"],
                         "missing_information": ["made up field"],
                     }
                 )
@@ -140,7 +150,7 @@ class StagedAgentTests(unittest.TestCase):
             "ungrounded_evidence_dropped",
             {flag.code for flag in decision.risk_flags},
         )
-        self.assertEqual(trace["ungrounded_evidence_count"], 1)
+        self.assertEqual(trace["ungrounded_evidence_count"], 3)
         self.assertEqual(trace["analyst_evidence_pack"]["evidence_ids"], [])
         self.assertEqual(trace["analyst_evidence_pack"]["missing_information"], [])
 

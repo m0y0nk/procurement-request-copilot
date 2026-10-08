@@ -45,7 +45,10 @@ an approval decision.
 Return exactly one JSON object with only need_summary, tool_results,
 evidence_ids, and missing_information. tool_results must list the names of
 the six tools whose outputs you inspected. Use evidence IDs from tool-backed
-records only. The code-computed missing fields are authoritative."""
+records only. For evidence_ids, select exact values from the code-generated
+allowlist included in the system message. Tool record references, employee IDs,
+vendor names, and request IDs are not evidence IDs. The code-computed missing
+fields are authoritative."""
 
 REVIEWER_SYSTEM_PROMPT = f"""You are the procurement recommendation reviewer.
 Use only the validated analyst evidence pack, supplied tool results, and
@@ -191,7 +194,15 @@ def _analyst_pack(
         request,
         rule_floor=deterministic.rule_floor,
         additional_untrusted_texts=additional_untrusted_texts,
-        system_prompt=ANALYST_SYSTEM_PROMPT,
+        system_prompt=(
+            f"{ANALYST_SYSTEM_PROMPT}\n"
+            "Allowed evidence IDs (code-generated): "
+            + json.dumps(
+                sorted(item.id for item in deterministic.evidence),
+                separators=(",", ":"),
+            )
+            + ". Select only exact IDs from this list."
+        ),
     )
     event_by_name = {
         str(event["tool_name"]): event
