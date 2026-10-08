@@ -9,16 +9,19 @@
 | 0 — Discovery | Done. Discovery record and policy table are in `docs/DISCOVERY.md`. |
 | 1 — Fix and foundation | Done and committed. Deterministic rules, typed tools, and the live/replay wrapper exist. |
 | 2 — Eval set | Done and committed. There are 37 labelled cases and a pre-registered ship rule. |
-| 3 — Architecture A and product | Product implementation is done. C-001 and the C-002–C-004 live checkpoint are complete. Full dev evaluation, trace review, and tuning remain. Phase 3 remains open. |
-| 4 — Architecture B | Not started. No Analyst/Reviewer implementation exists. |
-| 5 — Compare and decide | Not started. No valid architecture comparison or holdout run exists. |
-| 6 — Package | Not started. `docs/memo.md` is absent; a clean-clone test is not recorded. |
+| 3 — Architecture A and product | Product and full Architecture A dev run are complete. The run scored 21/22 recommendations; C-003 needs trace review and possible dev-only tuning. Phase 3 remains open. |
+| 4 — Architecture B | Two-agent implementation, API/UI selection, runner integration, and dry-run projection are committed. No live Architecture B evaluation has run. |
+| 5 — Compare and decide | Not started. No Architecture B comparison or holdout run exists. |
+| 6 — Package | README and memo draft exist; clean-clone verification was recorded. Final results, memo count/review, and holdout deliverables remain. |
 
-The C-001 live and replay checks complete. A code guard preserves its deterministic exact-match `USE_EXISTING_TOOL` recommendation. The user approved the next stage; C-002, C-003, and C-004 all completed live with their expected recommendation, approvals, and required/forbidden flags. The mock API is stopped. Stop before the full-dev live evaluation and wait for explicit approval.
+The full Architecture A dev run completed with 22 cases. The report scores 0.955 recommendation accuracy (21/22), with C-003 as the sole recommendation mismatch (`REQUEST_MORE_INFO` vs expected `RECOMMEND_APPROVAL`). Approval, flag, grounding, policy-compliance, injection-resistance, failure-handling, and escalation metrics are 1.0; under-escalation count is 0. The run used the local mock vendor service. Review C-003's trace before further tuning. No holdout has run.
 
-History immediately before this stage-results commit (verified with `git log -10 --oneline`):
+History immediately before this evaluation-results commit (verified with `git log -10 --oneline`):
 
 ```text
+d56cfb7 docs: rewrite README per deliverables spec and add memo draft
+f533174 feat: implement Architecture B staged two-agent pipeline
+3f6930a eval: record approved C-002 to C-004 checkpoint
 179b9a0 fix: preserve exact catalog recommendation in C-001
 3f2412a fix: recover from Groq unadvertised tool call
 f3f5a42 fix: sanitize authorization header and rerun failed checkpoints on resume
@@ -26,22 +29,19 @@ f3f5a42 fix: sanitize authorization header and rerun failed checkpoints on resum
 24c62b0 eval: preserve failed C-001 live smoke trace
 0b4b027 feat: enforce Groq GPT-OSS free-tier limits
 3ff4809 feat: add guarded LLM evaluation budgets
-ee27e76 feat: add guarded single-agent procurement product
-a354539 eval: add runner and scorer
-15e1f29 eval: add labelled cases and pre-registered ship rule
 ```
 
-The stage-results commit is one expected commit above that baseline. It contains the three live traces, generated stage summary, and this handover update. `.env`, `.cache/`, `eval/replay/`, and `docs/FDE_LOG.md` remain ignored local files by design; none is staged.
+The evaluation-results commit is one expected commit above that baseline. It contains the interrupted-run checkpoint, the completed 22-case trace, generated summary/report, and this handover update. `.env`, `.cache/`, `eval/replay/`, and `docs/FDE_LOG.md` remain ignored local files by design; none is staged.
 
 Current verification:
 
 ```text
-Ran 99 tests in 0.589s
+Ran 102 tests in 0.613s
 OK
 PRE-FLIGHT PASSED
 ```
 
-The full-suite output is from `./.venv/bin/python -m unittest discover -s tests -v`; LLM requests in unit tests are stubbed. `PRE-FLIGHT PASSED` was recorded before these recommendation changes; preflight was not rerun.
+The test and preflight output is from the Architecture B implementation commit (`f533174`): `./.venv/bin/python -m unittest discover -s tests -v` and `./.venv/bin/python verify_setup.py`. No source code changed during the full Architecture A evaluation.
 
 ## 2. Decisions already made
 
@@ -99,15 +99,17 @@ The provider is Groq through its OpenAI-compatible endpoint; the selected model 
 
 The estimated request ceiling is a code constant of 7,000 tokens, not an environment variable. The wrapper's request timeout is a function argument defaulting to 30 seconds, not an environment variable. `.env.example` uses `LLM_MODE=replay`; the local `.env` is explicitly set to live.
 
-The free-tier limits supplied by the user are 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day. As read from `.cache/llm_usage.json` for UTC `2026-10-07` after the C-002–C-004 run, usage is 58,841 tokens and 68 requests. This is the local counter, not an account-wide provider statement. It leaves 141,159 tokens under the daily cap.
+The free-tier limits supplied by the user are 30 requests/minute, 1,000 requests/day, 8,000 tokens/minute, and 200,000 tokens/day. As read from `.cache/llm_usage.json` for UTC `2026-10-08` after the Architecture A full dev run, usage is 141,363 tokens and 150 requests. This is the local counter, not an account-wide provider statement. It leaves 58,637 tokens and 850 requests under the daily caps.
 
-The latest full-dev dry-run printed:
+The Architecture A full-dev dry-run printed:
 
 ```text
 Architecture A: 22 cases, 38 agent executions, 418 prompt messages, 76 projected LLM calls, 203122 estimated tokens, 2672.7 estimated tokens/call, 20.1s derived minimum gap, and 2 UTC day(s) at the configured daily token cap.
 ```
 
-All dry-run token figures are estimates from serialized characters divided by four plus completion allowance. They are not model usage. The projection is 3,122 tokens above a full 200,000-token day. Current persisted usage leaves 196,642 tokens for this UTC day, so the projection exceeds today's remaining allowance by 6,480 tokens. Runtime usage and caps decide when to pause. The `20.1s` interval is derived from the estimated average and the 8,000 TPM limit.
+All dry-run token figures are estimates from serialized characters divided by four plus completion allowance. They are not model usage. The Architecture B dry-run now prints 22 cases, 22 executions, 286 prompt messages, 66 projected LLM calls, and 163,446 estimated tokens (2,476.5 estimated tokens/call, 18.6-second derived minimum gap, one UTC day at the configured cap). That estimate exceeds the current remaining daily token budget by 104,809 tokens. Do not start Architecture B live today.
+
+The completed Architecture A run made 47 additional provider requests and increased today's persisted usage from 95,541 to 141,363 tokens. The trace's case-wise usage sums to 141,363 tokens; some responses can be cached from prior attempts, so trace totals are not necessarily the amount newly charged in this invocation.
 
 The prompt-cost audit estimated C-001's nominal two-call input at 3,430 tokens before and 2,496 after. Both are estimates, not provider measurements. No reliable calibration factor is established. An earlier failed live attempt reported 3,358 aggregate usage tokens over four recorded responses; it is too small and incomplete to calibrate the full-dev estimate.
 
@@ -115,12 +117,14 @@ Live-call evidence:
 
 | Item | Verified state |
 |---|---|
-| Outbound requests | 68 total in the local UTC counter after the three-case stage. This counter also contains prior failed attempts. |
+| Outbound requests | 150 total in the local UTC counter after the Architecture A full-dev run. It includes prior attempts; this run added 47 requests. |
 | C-001 live result | With the mock active, 6 tool calls; the latest fresh model run used 6 calls and 6,639 provider-reported tokens, including 382 reasoning tokens, over 143,097 ms. The model draft said `RECOMMEND_APPROVAL`; the code guard preserves its deterministic exact-match `USE_EXISTING_TOOL` recommendation. |
 | Replay check | `results/raw/eval_dev_A_replay_20261007T231840-02c401.jsonl` completed with 6 replay hits, no `ReplayResponseMissing`, and all six tools available. |
 | One-case report | Recommendation accuracy 1.0, approvals match 1.0, flag accuracy 1.0, and no failed cases for C-001 only. This is not an architecture-level metric. |
 | C-002–C-004 live stage | All three matched their expected recommendations, approval roles, and must/must-not flags. All six tools succeeded in each case. The cases used 6, 6, and 7 LLM calls; provider-reported tokens were 6,392, 6,462, and 8,028 (including 284, 258, and 197 reasoning tokens). Each case recorded one retry for the unadvertised-tool fallback. |
 | Stage trace | The three case records were appended to `results/raw/eval_dev_A_live.jsonl`; the runner generated `results/summary.json` and `results/report.md`. |
+| Architecture A full dev | 22/22 cases completed. Recommendation accuracy 0.955 (21/22); approvals, flags, grounding, policy compliance, injection resistance, failure handling, escalation precision/recall are 1.000; under-escalation 0; p50/p95 latency 157,965.6/161,434.0 ms; 5.91 LLM calls and 6.00 tool calls per request. C-003 is the only recommendation mismatch. |
+| Full-dev traces | Complete run: `results/raw/eval_dev_A_live_20261008T052140-c0c06f.jsonl`. Earlier interrupted checkpoint: `results/raw/eval_dev_A_live_20261008T002447-ea9732.jsonl` (17 case rows, C-016 and C-017 failed with connection errors). |
 | Errors | Earlier attempts failed with the diagnosed Groq `tool_use_failed` error for an unadvertised `json` function. The wrapper's narrow fallback recovered the current run. |
 | Secret check | No key-shaped string or bearer header was found in committed result files. |
 
@@ -143,7 +147,7 @@ Case counts and category labels were read from `eval/cases/*.json`.
 
 The 37 cases meet the numerical minima and the split is 22 dev / 15 holdout. Coverage gap: C-031 and C-032 are incomplete-review/new-vendor cases, not evidenced blocked-vendor prohibitions; the discovery record says supplied data has no explicit blocked status or prohibited-use rule. Do not treat those labels as proof of a blocked vendor case.
 
-The raw live file contains an older C-001 run from before the exact-match guard, followed by C-002, C-003, and C-004 from the current live stage. The C-001 correction is separately captured in `results/raw/eval_dev_A_replay_20261007T231840-02c401.jsonl`. The latest generated summary has four rows and reports the old C-001 live mismatch alongside the three new passing cases; it is not a clean current-code aggregate. The three cases from the current stage match all labels. No full dev run, Architecture B run, or holdout run exists. Holdout labels have not been run or changed.
+The most recent `results/summary.json` and `results/report.md` are generated from the complete 22-case Architecture A dev run. C-003 expected `RECOMMEND_APPROVAL` but got `REQUEST_MORE_INFO`; all other recommendations matched. C-003's expected approvals and required privacy flag matched, and no missing information was computed. The reviewer next step asks Privacy to review; inspect this mismatch before prompt tuning. A prior partial checkpoint has 17 case records and two connection failures; the new complete trace has one row for all 22 dev cases. Architecture B has not had a live evaluation. Holdout has not been run, and labels were not changed.
 
 `--resume` is the runner default. `--fresh` ignores existing result checkpoints. The runner retries rows with explicit failure markers, but an execution that completed with the wrong expected label is still considered complete. The old C-001 live mismatch will therefore be skipped by `--resume`; use `--fresh` for the full-dev run so the current guard is applied. The LLM cache can still serve recorded responses in live mode.
 
@@ -159,8 +163,11 @@ Commands verified from runner help:
 # Replay check after a successful, fully recorded smoke
 ./.venv/bin/python -m eval.runner --split dev --arch A --mode replay --cases C-001 --limit 1 --repeats 1 --fresh
 
-# Full dev run for Architecture A after the user approves the next live stage
+# Completed Architecture A full dev run command
 ./.venv/bin/python -m eval.runner --split dev --arch A --mode live --repeats 1 --fresh
+
+# Architecture B full dev projection (zero network calls)
+./.venv/bin/python -m eval.runner --split dev --arch B --mode live --dry-run --repeats 1
 
 # Holdout run; do not run until the user explicitly approves it
 ./.venv/bin/python -m eval.runner --split holdout --arch both --mode live --repeats 1 --resume
@@ -173,27 +180,27 @@ There is no standalone report-generation CLI. Each successful runner invocation 
 
 ## 5. Next steps, in order
 
-1. **Wait for approval before full dev.** Current usage is 58,841 tokens on UTC `2026-10-07`, leaving 141,159 under the daily cap. The full-dev projection is 203,122 estimated tokens, so the estimate exceeds today's remaining allowance by 61,963. Runtime caps and resume protect the run.
-2. **If approved, run Architecture A full dev:** `./.venv/bin/python -m eval.runner --split dev --arch A --mode live --repeats 1 --fresh`. `--fresh` is required to replace the old completed-but-mislabeled C-001 row; other recorded model responses can still be served from cache.
-3. **Stop after full dev.** Read traces and report the results. Wait before Architecture B or any holdout run.
-4. **Implement Architecture B only after the user's next “continue.”** Do not compare or tune on holdout.
-5. **Holdout, sampled repeats, and later eval stages require the applicable explicit approval.**
+1. **Inspect C-003 on dev.** Compare its stored model responses and evidence to the case label; change a prompt/guard only if the trace establishes a product defect. Do not change labels.
+2. **Wait for user approval and a sufficient UTC budget before another live call.** Current usage is 141,363 tokens; the Architecture B dev projection is 163,446 estimated tokens and does not fit in today's 58,637 remaining tokens.
+3. **After approval and budget reset, run Architecture B dev:** `./.venv/bin/python -m eval.runner --split dev --arch B --mode live --repeats 1 --fresh`. Stop after this evaluation and inspect its report/traces.
+4. **Tune only on dev** and preserve the holdout split and labels.
+5. **Do not run holdout or repeats=3 without separate user approval and a fresh budget check.**
 
 Check `.cache/llm_usage.json` before every live stage. Do not run holdout without explicit approval.
 
-Open approvals: the full-dev live run; later sampled repeats if the daily counter permits; and the holdout run. C-001 replay and the C-002–C-004 live checkpoint are complete.
+Open approvals: a further C-003 live retry if needed; Architecture B dev live evaluation; sampled repeats; and the holdout run. C-001 replay, the C-002–C-004 checkpoint, and the Architecture A full-dev run are complete.
 
 ## 6. Landmines
 
 - `src/llm.py` retries one exact Groq `tool_use_failed` response without tool schemas. It does not retry unrelated 400 errors or a second fallback 400.
 - `agents/single_agent.py` preserves a code-verified exact-match `USE_EXISTING_TOOL` when the model returns generic `RECOMMEND_APPROVAL`; the model may still raise to a more cautious recommendation.
 - `eval/runner.py::_completed_keys` retries explicit failures but will skip a completed run with an incorrect expected label. Use `--fresh` for full dev to replace the old C-001 record.
-- `results/report.md` currently includes the old C-001 live mismatch alongside three correct cases. Use per-case traces; do not present its four-run summary as the corrected current-code score.
+- `results/report.md` is now the full 22-case Architecture A dev result; C-003 is the only recommendation mismatch. Check the current generated report before citing metrics.
 - C-001 has one completed, correctly scored replay evaluation only. Do not generalize its one-case scores.
 - `LLM_MODE` defaults to `live` in the wrapper, although `.env.example` sets replay. Keep replay explicit for offline checks.
-- Usage state is UTC-keyed. Current verified key is `2026-10-07`; do not use the machine's local date for the budget.
+- Usage state is UTC-keyed. Current verified key is `2026-10-08`; do not use the machine's local date for the budget.
 - `docs/FDE_LOG.md`, `.env`, `.cache/`, and `eval/replay/` are ignored intentionally. Keep the key and replay bodies out of Git and output.
-- The latest report includes an older C-001 record that predates the code guard. Do not present those aggregate metrics as an architecture result.
+- The separate earlier live file includes C-001 recorded before the exact-match guard. The latest 22-case file contains corrected C-001. Prefer the latest fresh full-dev report.
 - The case category “Blocked vendor / policy violation” has no source-backed blocked-vendor fixture. C-031 and C-032 are not explicit prohibitions.
 - `MASTER_PROMPT.md` is absent. Use the user's 0–6 plan and the stop-after-each-phase instruction.
 

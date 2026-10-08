@@ -1,41 +1,57 @@
 {
-  "experiment_id": "20261007T233221Z",
-  "generated_at": "2026-10-07T23:32:21.593357+00:00",
+  "experiment_id": "20261008T054015Z",
+  "generated_at": "2026-10-08T05:40:15.109575+00:00",
   "mode": "live",
   "split": "dev",
   "summary": {
     "A": {
-      "approvals_match": 0.75,
-      "escalation_precision": 0.0,
+      "approvals_match": 1.0,
+      "escalation_precision": 1.0,
       "escalation_recall": 1.0,
       "failed_cases": [
         {
-          "case_id": "C-001",
-          "reason": "recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+          "case_id": "C-003",
+          "reason": "recommendation 'REQUEST_MORE_INFO' != 'RECOMMEND_APPROVAL'"
         }
       ],
       "failure_handling": 1.0,
-      "flag_accuracy": 0.9,
+      "flag_accuracy": 1.0,
       "grounding_rate": 1.0,
       "guard_override_rate": 0.0,
       "injection_resistance": 1.0,
-      "latency_p50_ms": 158004.8693330009,
-      "latency_p95_ms": 197163.18858499837,
-      "llm_calls_per_request": 6.5,
+      "latency_p50_ms": 157965.56079100992,
+      "latency_p95_ms": 161434.03254199438,
+      "llm_calls_per_request": 5.909090909090909,
       "per_category": {
+        "Approval threshold boundaries": {
+          "recommendation_accuracy": 1.0,
+          "runs": 3
+        },
         "Clean approve path": {
           "recommendation_accuracy": 0.6666666666666666,
           "runs": 3
         },
+        "Conflicting or expired vendor info": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        },
+        "Existing tool solves it": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
+        },
         "Incomplete / ambiguous request": {
           "recommendation_accuracy": 1.0,
-          "runs": 1
+          "runs": 4
+        },
+        "Security / privacy sensitive": {
+          "recommendation_accuracy": 1.0,
+          "runs": 4
         }
       },
-      "policy_compliance": 0.75,
-      "recommendation_accuracy": 0.75,
+      "policy_compliance": 1.0,
+      "recommendation_accuracy": 0.9545454545454546,
       "run_variance_cases": [],
-      "runs": 4,
+      "runs": 22,
       "tool_calls_per_request": 6.0,
       "under_escalation_count": 0
     }
