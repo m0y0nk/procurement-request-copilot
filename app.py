@@ -1,36 +1,17 @@
 from __future__ import annotations
 
-import os
-
 import requests
 import streamlit as st
 
-API_BASE_URL = os.getenv("PROCUREMENT_API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-REQUEST_TIMEOUT_SECONDS = 30
+from src.ui_api import (
+    ANALYSIS_TIMEOUT_SECONDS,
+    api_get,
+    api_post,
+)
 
 st.set_page_config(page_title="Procurement Request Copilot", layout="wide")
 st.title("AI Procurement Request Copilot")
 st.caption("Recommendations support review. A human owns every purchasing decision.")
-
-
-def api_get(path: str) -> requests.Response:
-    response = requests.get(
-        f"{API_BASE_URL}{path}",
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    return response
-
-
-def api_post(path: str, payload: dict[str, object]) -> requests.Response:
-    response = requests.post(
-        f"{API_BASE_URL}{path}",
-        json=payload,
-        timeout=REQUEST_TIMEOUT_SECONDS,
-    )
-    response.raise_for_status()
-    return response
-
 
 def sync_analysis_scope(scope: str) -> None:
     if st.session_state.get("active_analysis_scope") != scope:
@@ -70,16 +51,18 @@ if request_mode == "Sample request":
     with right:
         st.subheader("Analysis")
         if st.button("Run analysis", type="primary", use_container_width=True):
-            try:
-                result = api_post(
-                    "/api/analyze",
-                    {"request_id": request_id, "architecture": architecture},
-                ).json()
-            except (requests.RequestException, ValueError) as exc:
-                st.error(f"Analysis failed: {exc}")
-            else:
-                st.session_state["analysis_result"] = result
-                st.session_state["analysis_request_id"] = request_id
+            with st.spinner("Analysis can take several minutes. Please wait."):
+                try:
+                    result = api_post(
+                        "/api/analyze",
+                        {"request_id": request_id, "architecture": architecture},
+                        timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                    ).json()
+                except (requests.RequestException, ValueError) as exc:
+                    st.error(f"Analysis failed: {exc}")
+                else:
+                    st.session_state["analysis_result"] = result
+                    st.session_state["analysis_request_id"] = request_id
 else:
     active_analysis_scope = f"new:{architecture}"
     sync_analysis_scope(active_analysis_scope)
@@ -132,20 +115,24 @@ else:
                 "business_justification": description.strip(),
                 "data_access_level": data_access_level,
             }
-            try:
-                result = api_post(
-                    "/api/analyze",
-                    {
-                        "request": request_payload,
-                        "description": description,
-                        "architecture": architecture,
-                    },
-                ).json()
-            except (requests.RequestException, ValueError) as exc:
-                st.error(f"Analysis failed: {exc}")
-            else:
-                st.session_state["analysis_result"] = result
-                st.session_state["analysis_request_id"] = result["decision"]["request_id"]
+            with st.spinner("Analysis can take several minutes. Please wait."):
+                try:
+                    result = api_post(
+                        "/api/analyze",
+                        {
+                            "request": request_payload,
+                            "description": description,
+                            "architecture": architecture,
+                        },
+                        timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
+                    ).json()
+                except (requests.RequestException, ValueError) as exc:
+                    st.error(f"Analysis failed: {exc}")
+                else:
+                    st.session_state["analysis_result"] = result
+                    st.session_state["analysis_request_id"] = result[
+                        "decision"
+                    ]["request_id"]
 
 result = st.session_state.get("analysis_result")
 if result:
