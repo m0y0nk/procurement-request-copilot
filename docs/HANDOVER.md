@@ -10,7 +10,7 @@
 | 1 — Fix and foundation | Done and committed. Deterministic rules, typed tools, and the live/replay wrapper exist. |
 | 2 — Eval set | Done and committed. There are 37 labelled cases and a pre-registered ship rule. |
 | 3 — Architecture A and product | Complete for dev. Full live run scored 21/22 before a guard fix; the C-003 trace showed the model misused `REQUEST_MORE_INFO` despite no missing fields. The shared guard now restores the deterministic recommendation; full 22-case replay scores 22/22. |
-| 4 — Architecture B | Two-agent implementation, API/UI selection, runner integration, and dry-run projection are committed. B live dev is partial: C-001–C-004 completed; a C-005 attempt stopped on the configured wait cap. The analyst prompt now receives an explicit code-generated evidence-ID allowlist; unit tests cover the observed record-reference confusion. This prompt fix has not been live-verified. |
+| 4 — Architecture B | Two-agent implementation, API/UI selection, runner integration, and dry-run projection are committed. B live dev is partial: C-001–C-004 completed; C-005 and the fresh C-001 prompt-fix smoke were stopped by the configured wait cap. The analyst prompt now receives an explicit code-generated evidence-ID allowlist; unit tests cover the observed record-reference confusion. This prompt fix has not been live-verified. |
 | 5 — Compare and decide | Not started. B's partial dev results are not comparable to A's full dev result. Holdout has not run. |
 | 6 — Package | README and memo draft exist; clean-clone verification was recorded. Final results, memo count/review, and holdout deliverables remain. |
 
@@ -117,7 +117,7 @@ Live-call evidence:
 
 | Item | Verified state |
 |---|---|
-| Outbound requests | 186 total in the local UTC counter. The B evaluation added 36 requests since the 150-request A checkpoint, including three calls in an incomplete C-005 attempt. |
+| Outbound requests | 191 total in the local UTC counter. The fresh C-001 prompt-fix smoke attempt added five requests / 3,894 tokens before the 323-second wait exceeded the configured 90-second maximum. |
 | C-001 live result | With the mock active, 6 tool calls; the latest fresh model run used 6 calls and 6,639 provider-reported tokens, including 382 reasoning tokens, over 143,097 ms. The model draft said `RECOMMEND_APPROVAL`; the code guard preserves its deterministic exact-match `USE_EXISTING_TOOL` recommendation. |
 | Replay check | `results/raw/eval_dev_A_replay_20261007T231840-02c401.jsonl` completed with 6 replay hits, no `ReplayResponseMissing`, and all six tools available. |
 | One-case report | Recommendation accuracy 1.0, approvals match 1.0, flag accuracy 1.0, and no failed cases for C-001 only. This is not an architecture-level metric. |
@@ -130,6 +130,7 @@ Live-call evidence:
 | Architecture B smoke | C-001 live returned the expected `USE_EXISTING_TOOL`; all six tool executions succeeded. It used 9,075 measured tokens, including 594 reasoning tokens. The same case replayed with no `ReplayResponseMissing` and no added daily usage. |
 | Architecture B partial dev | `results/raw/eval_dev_B_live.jsonl` has completed C-001–C-004. All four recommendations match labels; the generated report has 1.000 recommendation accuracy, but grounding is 0.452 and all four cases fail on 11–12 unsupported analyst evidence IDs. The final decision evidence items are grounded against successful tool records; invalid analyst IDs are dropped and counted by the scorer. |
 | Architecture B interrupted case | The attempted C-005 run stopped when Groq required a 108-second per-minute reset wait, above `LLM_MAX_WAIT_SECONDS=90`. The counter increased by three requests / 1,574 tokens during this attempt, but there is no completed C-005 raw row. Do not bypass the configured wait ceiling. |
+| Prompt-fix smoke attempt | After user approval, `./.venv/bin/python -m eval.runner --split dev --arch B --mode live --cases C-001 --limit 1 --repeats 1 --fresh` stopped with `Live evaluation stopped: Per-minute rate limit requires waiting 323.0s, above LLM_MAX_WAIT_SECONDS=90.0s.` The counter moved from 179,186 / 186 to 183,080 / 191 for UTC 2026-10-08. No case row or fresh raw file was written; `results/summary.json` remains the old four-case report. The prompt fix is still not live-verified. |
 | Current report | `results/report.md` and `results/summary.json` are generated from the four-case Architecture B live checkpoint. They are partial B results, not final results and not the A replay report. |
 | Earlier interrupted checkpoint | `results/raw/eval_dev_A_live_20261008T002447-ea9732.jsonl` has 17 rows; C-016 and C-017 ended with `ConnectionError`. The later 22-case live run is complete. |
 | Errors | Earlier attempts failed with the diagnosed Groq `tool_use_failed` error for an unadvertised `json` function. The wrapper's narrow fallback recovered the current run. |
@@ -190,15 +191,15 @@ There is no standalone report-generation CLI. Each successful runner invocation 
 
 ## 5. Next steps, in order
 
-1. **Verify the prompt fix with a single B dev case after UTC reset and explicit user approval.** Use `--cases C-001 --limit 1 --fresh` so the corrected prompt is not skipped as a completed old row. Inspect the returned analyst IDs and grounding count.
-2. **If C-001 is clean, re-project the remaining B dev cases after prompt changes.** The four-case projection is now 30,179 estimated tokens, but the previous four-case run used 36,249 measured tokens; do not assume the estimate is sufficient. The last counter was 179,186 tokens / 186 requests and the last provider wait request was 108 seconds, above the 90-second cap.
+1. **After UTC reset and explicit user approval, retry the fresh one-case B C-001 smoke.** Last counter: 183,080 tokens / 191 requests, leaving 16,920 tokens / 809 requests under local limits for 2026-10-08. The provider requested 323 seconds, above the configured maximum of 90 seconds; stop if refused again. The prior attempt produced no completed result row.
+2. **If the smoke completes with canonical analyst IDs and zero ungrounded references, re-project B dev in bounded chunks.** The four-case dry-run estimated 30,179 tokens; the old-prompt four cases used 36,249 measured tokens. Recheck `.cache/llm_usage.json` and dry-run each chunk. Preserve completed rows; use a new result path when rerunning cases whose prompt changed.
 3. **After the smoke succeeds and with user approval, resume B dev in bounded chunks.** Recheck `.cache/llm_usage.json` and dry-run each chunk; preserve completed rows. Use a separate fresh trace for cases whose prompts changed, because completed rows are skipped under `--resume`.
 4. **After full B dev, compare A and B on dev and inspect traces.** Keep the B four-case checkpoint separate from full A results.
 5. **Do not run holdout or repeats=3 without separate user approval and a fresh budget check.** Preserve all holdout labels.
 
 Check `.cache/llm_usage.json` before every live stage. Do not run holdout without explicit approval.
 
-Open approvals: additional Architecture B live calls after UTC reset, sampled repeats, and the holdout run. C-001 B smoke/replay and B C-001–C-004 are complete; C-005 is incomplete. Architecture A full dev and the C-003 replay guard check are complete.
+Open approvals: B live continuation after UTC reset, sampled repeats, and the holdout run. The user approved the fresh C-001 smoke, but the provider wait guard stopped it before a result row was written. B C-001–C-004 from the prior prompt and its replay check are complete; C-005 is incomplete. Architecture A full dev and the C-003 replay guard check are complete.
 
 ## 6. Landmines
 
@@ -210,6 +211,7 @@ Open approvals: additional Architecture B live calls after UTC reset, sampled re
 - B's full-dev dry-run undercounted the four-case measured spend by a factor of 1.217 and projected 12 calls where the four completed cases needed 33 provider requests including one retry. Recompute after fixing prompts and leave daily headroom.
 - The four old B live rows were generated before the analyst received its exact evidence-ID allowlist. They contain invalid IDs and remain failures; the updated prompt has only unit-test/dry-run validation so far. Do not count the old rows as proof that the prompt fix worked.
 - The C-005 attempt was interrupted by a 108-second per-minute Retry-After above the 90-second maximum. The run stopped; do not reduce the wait cap or bypass it.
+- The prompt-fix C-001 attempt was stopped before producing a raw case row when the provider reset wait reached 323 seconds. The local budget counter increased by five requests / 3,894 tokens; do not infer a completed case from the counter increase.
 - C-001 has one completed, correctly scored replay evaluation only. Do not generalize its one-case scores.
 - `LLM_MODE` defaults to `live` in the wrapper, although `.env.example` sets replay. Keep replay explicit for offline checks.
 - Usage state is UTC-keyed. Current verified key is `2026-10-08`; do not use the machine's local date for the budget.
