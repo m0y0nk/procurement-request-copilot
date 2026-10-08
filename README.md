@@ -37,7 +37,7 @@ cp .env.example .env
 #   LLM_API_KEY=gsk_...      # Groq key; never commit this
 ```
 
-`.env.example` defaults to replay mode. Live mode targets Groq's OpenAI-compatible endpoint with `openai/gpt-oss-120b`.
+`.env.example` defaults to replay mode. Live mode targets Groq's OpenAI-compatible endpoint with `openai/gpt-oss-20b`.
 The UI waits up to `PROCUREMENT_ANALYSIS_TIMEOUT_SECONDS` (default 600) for analysis requests, which can take longer than simple API reads and writes.
 
 ### Start
@@ -184,12 +184,12 @@ Use `--cases C-001,C-002` to target specific cases, `--fresh` to ignore checkpoi
 
 ### Current dry-run projections
 
-| Architecture | Cases | Projected LLM calls | Estimated tokens |
-|---|---:|---:|---:|
-| A | 22 | 44 | 122,988 |
-| B | 22 | 66 | 165,614 |
+| Architecture | Cases | Projected LLM calls | Estimated tokens | Maximum estimated request |
+|---|---:|---:|---:|---:|
+| A | 22 | 44 | 122,988 | 3,411 |
+| B | 22 | 66 | 165,614 | 3,339 |
 
-These projections were produced by `make eval-dry-run` after the evidence-ID allowlist prompt change and recorded in [`results/dev_dry_run.txt`](results/dev_dry_run.txt). Token values are estimates from serialized prompt characters divided by four plus the configured completion allowance. The earlier four-case B projection (30,179 tokens) and pre-fix four-case live usage (36,249 measured tokens) are recorded in the local handover/log; do not treat the current estimates as a spend guarantee.
+These projections were produced by `make eval-dry-run` after the evidence-ID allowlist prompt change and recorded in [`results/dev_dry_run.txt`](results/dev_dry_run.txt). Token values are estimates from serialized prompt characters divided by four plus the configured completion allowance. Maximum estimated requests are below the wrapper's 7,000-token request limit, but estimates are not a spend guarantee. The earlier four-case B projection (30,179 tokens) and pre-fix four-case live usage (36,249 measured tokens) are recorded in the local handover/log.
 
 ### Recorded dev results
 

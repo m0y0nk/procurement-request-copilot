@@ -236,6 +236,7 @@ def dry_run_projection(
                 f"Dry-run prompt construction is not implemented for architecture {architecture}."
             )
         total_messages = total_calls = total_tokens = executions = 0
+        max_estimated_request_tokens = 0
         sample_ids = {case.id for case in cases[:sample_size]}
         for case in cases:
             request = case.procurement_request()
@@ -316,6 +317,7 @@ def dry_run_projection(
                 prompt_messages = len(messages) + len(followup_messages)
                 case_calls = 2
                 case_tokens = first_call_tokens + final_call_tokens
+                call_input_estimates = (first_call_tokens, final_call_tokens)
             else:
                 synthetic_events = [
                     {
@@ -351,6 +353,19 @@ def dry_run_projection(
                     + final_call_tokens
                     + (len(json.dumps(reviewer_messages, separators=(",", ":"))) + 3) // 4
                 )
+                reviewer_input_tokens = (
+                    len(json.dumps(reviewer_messages, separators=(",", ":"))) + 3
+                ) // 4
+                call_input_estimates = (
+                    first_call_tokens,
+                    final_call_tokens,
+                    reviewer_input_tokens,
+                )
+            max_estimated_request_tokens = max(
+                max_estimated_request_tokens,
+                *(estimate + int(os.getenv("LLM_MAX_TOKENS", "1200"))
+                  for estimate in call_input_estimates),
+            )
             total_messages += prompt_messages * case_repeats
             total_calls += case_calls * case_repeats
             executions += case_repeats
@@ -372,6 +387,7 @@ def dry_run_projection(
             "messages": total_messages,
             "projected_llm_calls": total_calls,
             "estimated_tokens_chars_div_4": total_tokens,
+            "max_estimated_request_tokens": max_estimated_request_tokens,
             "average_estimated_tokens_per_call": average_tokens_per_call,
             "derived_minimum_gap_seconds": ceil(derived_minimum_gap * 10) / 10,
             "projected_utc_days_at_daily_cap": ceil(
@@ -634,7 +650,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"{estimate['projected_llm_calls']} projected LLM calls, "
                 f"{estimate['estimated_tokens_chars_div_4']} estimated tokens, "
                 f"{estimate['average_estimated_tokens_per_call']:.1f} estimated "
-                f"tokens/call, {estimate['derived_minimum_gap_seconds']:.1f}s "
+                f"tokens/call, maximum estimated request "
+                f"{estimate['max_estimated_request_tokens']} tokens, "
+                f"{estimate['derived_minimum_gap_seconds']:.1f}s "
                 f"derived minimum gap, and {estimate['projected_utc_days_at_daily_cap']} "
                 "UTC day(s) at the configured daily token cap."
             )
