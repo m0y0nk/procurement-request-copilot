@@ -226,6 +226,7 @@ def dry_run_projection(
         EvidencePack,
         build_reviewer_prompt,
     )
+    from src.llm import estimate_tokens
 
     if repeats < 1 or sample_size < 1:
         raise ValueError("repeats and sample_size must be positive.")
@@ -255,7 +256,6 @@ def dry_run_projection(
                     else {}
                 ),
             )
-            followup_messages = list(messages)
             tool_names = (
                 "get_employee_and_budget",
                 "search_software_catalog",
@@ -264,73 +264,78 @@ def dry_run_projection(
                 "get_purchase_history",
                 "compute_approval_chain",
             )
-            synthetic_calls = [
+            synthetic_events = [
                 {
-                    "id": f"dry-run-{index}",
-                    "type": "function",
-                    "function": {"name": name, "arguments": "{}"},
+                    "tool_name": name,
+                    "status": "success",
+                    "record_refs": [f"dry-run-{index}"],
+                    "output": {
+                        "status": "success",
+                        "data": {
+                            "estimated_output_tokens": 200,
+                            "sample_payload": "x" * 800,
+                        },
+                    },
                 }
                 for index, name in enumerate(tool_names, start=1)
             ]
-            followup_messages.append(
-                {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": synthetic_calls,
-                }
-            )
-            followup_messages.extend(
-                {
-                    "role": "tool",
-                    "tool_call_id": f"dry-run-{index}",
-                    "content": "<untrusted_data>"
-                    + json.dumps(
-                        {
-                            "tool_name": name,
-                            "estimated_output_tokens": 200,
-                        },
-                        separators=(",", ":"),
-                    )
-                    + "</untrusted_data>",
-                }
-                for index, name in enumerate(tool_names, start=1)
-            )
-            tool_schema_tokens = (
-                len(
-                    json.dumps(
-                        _tool_schemas(),
-                        sort_keys=True,
-                        separators=(",", ":"),
+            simulated_messages = list(messages)
+            called_names: set[str] = set()
+            call_input_estimates: list[int] = []
+            prompt_messages = 0
+            for index, (name, event) in enumerate(
+                zip(tool_names, synthetic_events, strict=True),
+                start=1,
+            ):
+                tool_schemas = _tool_schemas(called_names)
+                call_input_estimates.append(
+                    estimate_tokens(
+                        [
+                            *simulated_messages,
+                            {"role": "tool_schemas", "content": tool_schemas},
+                        ]
                     )
                 )
-                + 3
-            ) // 4
-            first_call_tokens = (
-                len(json.dumps(messages, separators=(",", ":"))) + 3
-            ) // 4 + tool_schema_tokens
-            synthetic_tool_reply_tokens = 6 * 200
-            final_call_tokens = (
-                len(json.dumps(followup_messages, separators=(",", ":"))) + 3
-            ) // 4 + synthetic_tool_reply_tokens
+                prompt_messages += len(simulated_messages)
+                call_id = f"dry-run-{index}"
+                simulated_messages.extend(
+                    [
+                        {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": name,
+                                        "arguments": "{}",
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "role": "tool",
+                            "tool_call_id": call_id,
+                            "content": "<untrusted_data>"
+                            + json.dumps(
+                                event,
+                                sort_keys=True,
+                                separators=(",", ":"),
+                            )
+                            + "</untrusted_data>",
+                        },
+                    ]
+                )
+                called_names.add(name)
+
+            call_input_estimates.append(estimate_tokens(simulated_messages))
+            prompt_messages += len(simulated_messages)
             case_repeats = repeats if case.id in sample_ids else 1
             if architecture == "A":
-                prompt_messages = len(messages) + len(followup_messages)
-                case_calls = 2
-                case_tokens = first_call_tokens + final_call_tokens
-                call_input_estimates = (first_call_tokens, final_call_tokens)
+                case_calls = len(call_input_estimates)
+                case_tokens = sum(call_input_estimates)
             else:
-                synthetic_events = [
-                    {
-                        "tool_name": name,
-                        "status": "success",
-                        "record_refs": [f"dry-run-{index}"],
-                        "output": {
-                            "status": "success",
-                            "data": {"estimated_output_tokens": 200},
-                        },
-                    }
-                    for index, name in enumerate(tool_names, start=1)
-                ]
                 reviewer_messages = build_reviewer_prompt(
                     request,
                     rule_floor=floor,
@@ -342,29 +347,17 @@ def dry_run_projection(
                     tool_events=synthetic_events,
                     additional_untrusted_texts=untrusted_texts,
                 )
-                prompt_messages = (
-                    len(messages)
-                    + len(followup_messages)
-                    + len(reviewer_messages)
-                )
-                case_calls = 3
-                case_tokens = (
-                    first_call_tokens
-                    + final_call_tokens
-                    + (len(json.dumps(reviewer_messages, separators=(",", ":"))) + 3) // 4
-                )
-                reviewer_input_tokens = (
-                    len(json.dumps(reviewer_messages, separators=(",", ":"))) + 3
-                ) // 4
-                call_input_estimates = (
-                    first_call_tokens,
-                    final_call_tokens,
-                    reviewer_input_tokens,
-                )
+                reviewer_input_tokens = estimate_tokens(reviewer_messages)
+                prompt_messages += len(reviewer_messages)
+                call_input_estimates.append(reviewer_input_tokens)
+                case_calls = len(call_input_estimates)
+                case_tokens = sum(call_input_estimates)
             max_estimated_request_tokens = max(
                 max_estimated_request_tokens,
-                *(estimate + int(os.getenv("LLM_MAX_TOKENS", "1200"))
-                  for estimate in call_input_estimates),
+                *(
+                    estimate + int(os.getenv("LLM_MAX_TOKENS", "1200"))
+                    for estimate in call_input_estimates
+                ),
             )
             total_messages += prompt_messages * case_repeats
             total_calls += case_calls * case_repeats
@@ -639,7 +632,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(
             "Dry-run only. No HTTP calls were made. Token values are estimates "
-            "from serialized characters divided by four; projected completion "
+            "from serialized characters divided by four, with one tool per "
+            "turn and a 200-token synthetic result per tool; completion "
             "allowance uses LLM_MAX_TOKENS."
         )
         for architecture, estimate in projection.items():

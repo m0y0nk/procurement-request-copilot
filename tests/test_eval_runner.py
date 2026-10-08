@@ -225,12 +225,14 @@ class EvaluationRunnerTests(unittest.TestCase):
 
         self.assertEqual(projection["A"]["cases"], 1)
         self.assertEqual(projection["A"]["agent_executions"], 1)
-        self.assertEqual(projection["A"]["projected_llm_calls"], 2)
+        self.assertEqual(projection["A"]["projected_llm_calls"], 7)
         self.assertGreater(projection["A"]["max_estimated_request_tokens"], 1200)
+        self.assertLess(projection["A"]["max_estimated_request_tokens"], 7000)
         self.assertEqual(projection["B"]["cases"], 1)
         self.assertEqual(projection["B"]["agent_executions"], 1)
-        self.assertEqual(projection["B"]["projected_llm_calls"], 3)
+        self.assertEqual(projection["B"]["projected_llm_calls"], 8)
         self.assertGreater(projection["B"]["max_estimated_request_tokens"], 1200)
+        self.assertLess(projection["B"]["max_estimated_request_tokens"], 7000)
         post.assert_not_called()
         get.assert_not_called()
 
