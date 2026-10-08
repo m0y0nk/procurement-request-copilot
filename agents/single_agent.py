@@ -334,6 +334,18 @@ def _maximum_recommendation(
     return floor, True
 
 
+def _guard_missing_information_recommendation(
+    recommendation: Recommendation,
+    deterministic: ProcurementDecision,
+) -> tuple[Recommendation, bool]:
+    if (
+        recommendation == "REQUEST_MORE_INFO"
+        and not deterministic.missing_information
+    ):
+        return deterministic.recommendation, True
+    return recommendation, False
+
+
 def _fail_closed(
     decision: ProcurementDecision,
     *,
@@ -609,6 +621,12 @@ def run_single_agent(
         and final_recommendation == "RECOMMEND_APPROVAL"
     ):
         final_recommendation = "USE_EXISTING_TOOL"
+    final_recommendation, information_request_guarded = (
+        _guard_missing_information_recommendation(
+            final_recommendation,
+            deterministic,
+        )
+    )
     if final_recommendation == "RECOMMEND_REJECTION":
         failure_detail = "No explicit policy prohibition is present in supplied evidence."
         decision = _fail_closed(
@@ -626,6 +644,17 @@ def run_single_agent(
                     code="FLOOR_ENFORCED",
                     severity="high",
                     detail="The model recommendation was below the code-computed minimum outcome.",
+                )
+            )
+        if information_request_guarded:
+            flags.append(
+                RiskFlag(
+                    code="unsupported_request_more_info",
+                    severity="medium",
+                    detail=(
+                        "The model requested more information, but code found "
+                        "no missing request fields; the deterministic recommendation was retained."
+                    ),
                 )
             )
         decision = deterministic.model_copy(

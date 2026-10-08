@@ -13,6 +13,7 @@ from agents.single_agent import (
     AgentExecutionError,
     TracingProcurementTools,
     _fail_closed,
+    _guard_missing_information_recommendation,
     _maximum_recommendation,
     _parse_draft,
     _recorded_latency_ms,
@@ -422,6 +423,12 @@ def run_staged_agent(
         and recommendation == "RECOMMEND_APPROVAL"
     ):
         recommendation = "USE_EXISTING_TOOL"
+    recommendation, information_request_guarded = (
+        _guard_missing_information_recommendation(
+            recommendation,
+            deterministic,
+        )
+    )
     if recommendation == "RECOMMEND_REJECTION":
         failure_detail = (
             "No explicit policy prohibition is present in supplied evidence."
@@ -451,6 +458,17 @@ def run_staged_agent(
                     detail=(
                         f"{ungrounded_count} analyst evidence reference(s) "
                         "did not match deterministic evidence and were dropped."
+                    ),
+                )
+            )
+        if information_request_guarded:
+            flags.append(
+                RiskFlag(
+                    code="unsupported_request_more_info",
+                    severity="medium",
+                    detail=(
+                        "The model requested more information, but code found "
+                        "no missing request fields; the deterministic recommendation was retained."
                     ),
                 )
             )

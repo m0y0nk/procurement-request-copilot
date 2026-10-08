@@ -92,6 +92,39 @@ class SingleAgentTests(unittest.TestCase):
         )
         self.assertIn("privacy_review_required", {flag.code for flag in decision.risk_flags})
 
+    @patch("tools.procurement.requests.get")
+    def test_model_request_for_information_is_guarded_when_code_found_none(self, get):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "security_review_status": "approved",
+            "last_review_date": "2026-06-20",
+            "risk_level": "low",
+            "processes_personal_data": True,
+            "stores_data_outside_region": False,
+            "notes": "Current assessment.",
+        }
+        get.return_value = response
+        request_data = get_request("REQ-1010")
+        request_data["request_id"] = "C-003"
+        request = ProcurementRequest.model_validate(request_data)
+
+        decision, _ = run_single_agent(
+            request,
+            tools=ProcurementTools(retry_backoff_seconds=0),
+            llm=self._queued_responses(
+                [self.tool_calls, self._draft("REQUEST_MORE_INFO")]
+            ),
+        )
+
+        self.assertEqual(decision.missing_information, [])
+        self.assertEqual(decision.recommendation, "RECOMMEND_APPROVAL")
+        self.assertIn(
+            "unsupported_request_more_info",
+            {flag.code for flag in decision.risk_flags},
+        )
+        self.assertEqual(decision.rule_floor, "RECOMMEND_APPROVAL")
+
     @staticmethod
     def _draft(recommendation: str = "USE_EXISTING_TOOL") -> LLMResponse:
         content = json.dumps(

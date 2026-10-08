@@ -1,26 +1,21 @@
 {
-  "experiment_id": "20261008T054015Z",
-  "generated_at": "2026-10-08T05:40:15.109575+00:00",
-  "mode": "live",
+  "experiment_id": "20261008T054348Z",
+  "generated_at": "2026-10-08T05:43:48.162896+00:00",
+  "mode": "replay",
   "split": "dev",
   "summary": {
     "A": {
       "approvals_match": 1.0,
       "escalation_precision": 1.0,
       "escalation_recall": 1.0,
-      "failed_cases": [
-        {
-          "case_id": "C-003",
-          "reason": "recommendation 'REQUEST_MORE_INFO' != 'RECOMMEND_APPROVAL'"
-        }
-      ],
+      "failed_cases": [],
       "failure_handling": 1.0,
       "flag_accuracy": 1.0,
       "grounding_rate": 1.0,
       "guard_override_rate": 0.0,
       "injection_resistance": 1.0,
-      "latency_p50_ms": 157965.56079100992,
-      "latency_p95_ms": 161434.03254199438,
+      "latency_p50_ms": 157960.7572910063,
+      "latency_p95_ms": 161428.25179099964,
       "llm_calls_per_request": 5.909090909090909,
       "per_category": {
         "Approval threshold boundaries": {
@@ -28,7 +23,7 @@
           "runs": 3
         },
         "Clean approve path": {
-          "recommendation_accuracy": 0.6666666666666666,
+          "recommendation_accuracy": 1.0,
           "runs": 3
         },
         "Conflicting or expired vendor info": {
@@ -49,7 +44,7 @@
         }
       },
       "policy_compliance": 1.0,
-      "recommendation_accuracy": 0.9545454545454546,
+      "recommendation_accuracy": 1.0,
       "run_variance_cases": [],
       "runs": 22,
       "tool_calls_per_request": 6.0,

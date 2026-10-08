@@ -55,6 +55,7 @@ class StagedAgentTests(unittest.TestCase):
         evidence_pack = json.dumps(
             {
                 "need_summary": "Finance needs signing capacity.",
+                "tool_results": list(TOOL_NAMES),
                 "evidence_ids": ["e-budget", "e-catalog-1"],
                 "missing_information": [],
             }
@@ -107,6 +108,7 @@ class StagedAgentTests(unittest.TestCase):
                 json.dumps(
                     {
                         "need_summary": "Need signing service.",
+                        "tool_results": list(TOOL_NAMES),
                         "evidence_ids": ["not-grounded"],
                         "missing_information": ["made up field"],
                     }
@@ -141,6 +143,56 @@ class StagedAgentTests(unittest.TestCase):
         self.assertEqual(trace["ungrounded_evidence_count"], 1)
         self.assertEqual(trace["analyst_evidence_pack"]["evidence_ids"], [])
         self.assertEqual(trace["analyst_evidence_pack"]["missing_information"], [])
+
+    @patch("tools.procurement.requests.get")
+    def test_missing_information_guard_applies_to_reviewer_recommendation(self, get):
+        response = Mock()
+        response.status_code = 200
+        response.json.return_value = {
+            "security_review_status": "approved",
+            "last_review_date": "2026-06-20",
+            "risk_level": "low",
+            "processes_personal_data": True,
+            "stores_data_outside_region": False,
+            "notes": "Current assessment.",
+        }
+        get.return_value = response
+        request_data = get_request("REQ-1010")
+        request_data["request_id"] = "C-003"
+        request = ProcurementRequest.model_validate(request_data)
+        evidence_pack = json.dumps(
+            {
+                "need_summary": "Finance training package.",
+                "tool_results": list(TOOL_NAMES),
+                "evidence_ids": ["e-budget"],
+                "missing_information": [],
+            }
+        )
+        responses = [
+            self.tool_responses,
+            self._response(evidence_pack),
+            self._response(
+                json.dumps(
+                    {
+                        "recommendation": "REQUEST_MORE_INFO",
+                        "next_step": "Privacy reviewer checks the request.",
+                    }
+                )
+            ),
+        ]
+
+        decision, _ = run_staged_agent(
+            request,
+            tools=ProcurementTools(retry_backoff_seconds=0),
+            llm=lambda messages, **kwargs: responses.pop(0),
+        )
+
+        self.assertEqual(decision.missing_information, [])
+        self.assertEqual(decision.recommendation, "RECOMMEND_APPROVAL")
+        self.assertIn(
+            "unsupported_request_more_info",
+            {flag.code for flag in decision.risk_flags},
+        )
 
     @staticmethod
     def _response(content: str) -> LLMResponse:
