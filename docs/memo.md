@@ -27,5 +27,3 @@ The C-003 trace shows the model mistook a required Privacy approval for missing 
 Do not ship either architecture from this incomplete comparison. Keep A as the dev fallback, not a final selection: it completed the dev set with full grounding, while B's sample is partial and its prompt fix lacks live evidence. The B recommendation score cannot be compared fairly with A's because sample sizes and case coverage differ.
 
 Risks accepted for this interim checkpoint: B grounding remains unverified after the prompt fix; the sample does not establish either architecture's holdout performance; and provider rate limits stopped recent live attempts. Dry-run estimates are not spend guarantees. Revisit after an approved B smoke passes grounding, both architectures have matched dev results, and the user approves holdout. Revisit sooner if request volume, policy types, or the model/provider changes. The pre-registered holdout rule remains authoritative.
-
-Word count: 393
