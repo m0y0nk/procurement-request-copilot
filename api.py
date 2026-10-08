@@ -12,6 +12,7 @@ from agents.single_agent import run_single_agent
 from src.contracts import ProcurementDecision, ProcurementRequest, Recommendation
 from src.decisions import DecisionStore, ReviewerAction, ReviewerDecision
 from src.data_access import get_request, load_requests
+from src.llm import LLMRunAborted
 
 Mode = Literal["live", "replay"]
 ROOT = Path(__file__).resolve().parent
@@ -150,12 +151,18 @@ def create_app(
         else:
             request = payload.request.to_request(payload.description or "")
         selected_mode = payload.mode or os.getenv("LLM_MODE", "live")
-        if payload.architecture == "B":
-            from agents.staged_agent import run_staged_agent
+        try:
+            if payload.architecture == "B":
+                from agents.staged_agent import run_staged_agent
 
-            decision, trace = run_staged_agent(request, mode=selected_mode)
-        else:
-            decision, trace = analyzer(request, mode=selected_mode)
+                decision, trace = run_staged_agent(request, mode=selected_mode)
+            else:
+                decision, trace = analyzer(request, mode=selected_mode)
+        except LLMRunAborted as exc:
+            raise HTTPException(
+                status_code=429,
+                detail=str(exc),
+            ) from exc
         return AnalysisResponse(decision=decision, trace=trace)
 
     @application.get("/api/decisions", response_model=list[ReviewerDecision])

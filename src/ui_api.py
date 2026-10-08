@@ -39,3 +39,14 @@ def api_post(
     )
     response.raise_for_status()
     return response
+
+
+def analysis_error_message(exc: Exception) -> str:
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        try:
+            payload = exc.response.json()
+        except ValueError:
+            payload = None
+        if isinstance(payload, dict) and isinstance(payload.get("detail"), str):
+            return f"Analysis could not run: {payload['detail']}"
+    return f"Analysis failed: {exc}"

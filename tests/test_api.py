@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from api import create_app
 from src.contracts import ProcurementDecision, ProcurementRequest
+from src.llm import LLMRunAborted
 from src.solution import analyze_request
 from tools.procurement import ProcurementTools
 
@@ -58,6 +59,28 @@ class ProcurementApiTests(unittest.TestCase):
             "REQ-1001",
         )
         self.assertTrue(response.json()["decision"]["human_review"]["required"])
+
+    def test_llm_run_abort_returns_rate_limit_response(self):
+        def stopped_analyzer(request: ProcurementRequest, **kwargs):
+            raise LLMRunAborted(
+                "Per-minute rate limit requires waiting 133.0s, above "
+                "LLM_MAX_WAIT_SECONDS=90.0s."
+            )
+
+        client = TestClient(
+            create_app(
+                analyzer=stopped_analyzer,
+                decisions_path=self.decisions_path,
+            )
+        )
+
+        response = client.post(
+            "/api/analyze",
+            json={"request_id": "REQ-1001", "mode": "live"},
+        )
+
+        self.assertEqual(response.status_code, 429)
+        self.assertIn("133.0s", response.json()["detail"])
 
     @patch("agents.staged_agent.run_staged_agent")
     def test_architecture_b_routes_to_staged_agent(self, run_agent):

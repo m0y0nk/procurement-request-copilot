@@ -5,6 +5,7 @@ import streamlit as st
 
 from src.ui_api import (
     ANALYSIS_TIMEOUT_SECONDS,
+    analysis_error_message,
     api_get,
     api_post,
 )
@@ -59,7 +60,7 @@ if request_mode == "Sample request":
                         timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
                     ).json()
                 except (requests.RequestException, ValueError) as exc:
-                    st.error(f"Analysis failed: {exc}")
+                    st.error(analysis_error_message(exc))
                 else:
                     st.session_state["analysis_result"] = result
                     st.session_state["analysis_request_id"] = request_id
@@ -127,7 +128,7 @@ else:
                         timeout_seconds=ANALYSIS_TIMEOUT_SECONDS,
                     ).json()
                 except (requests.RequestException, ValueError) as exc:
-                    st.error(f"Analysis failed: {exc}")
+                    st.error(analysis_error_message(exc))
                 else:
                     st.session_state["analysis_result"] = result
                     st.session_state["analysis_request_id"] = result[

@@ -3,15 +3,30 @@ from __future__ import annotations
 import unittest
 from unittest.mock import Mock, patch
 
+import requests
+
 from src.ui_api import (
     ANALYSIS_TIMEOUT_SECONDS,
     REQUEST_TIMEOUT_SECONDS,
+    analysis_error_message,
     api_get,
     api_post,
 )
 
 
 class UIApiTests(unittest.TestCase):
+    def test_analysis_error_includes_structured_api_detail(self) -> None:
+        response = requests.Response()
+        response.status_code = 429
+        response._content = (
+            b'{"detail":"Per-minute rate limit requires waiting 133.0s."}'
+        )
+        error = requests.HTTPError(response=response)
+
+        message = analysis_error_message(error)
+
+        self.assertIn("133.0s", message)
+
     @patch("src.ui_api.requests.post")
     def test_analysis_timeout_allows_slow_live_request(self, post: Mock) -> None:
         response = Mock()
