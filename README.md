@@ -4,7 +4,7 @@ Inspects software and service purchase requests with six typed tools.
 Deterministic policy rules constrain recommendations shown to a human reviewer.
 All approvals and purchasing decisions stay with people.
 
-Architecture A (single agent) and Architecture B (staged analyst + reviewer) are implemented. Evaluation is in progress; the current B results cover only four dev cases.
+Architecture A (single agent) and Architecture B (staged analyst + reviewer) are implemented. Both have dev traces for the same 22 cases, but use different model versions; six B cases used a deterministic fallback after model-call failures. Holdout has not been run.
 
 > All companies, vendors, products, employees, prices, policies, and risk signals are synthetic and exist only for this assessment.
 
@@ -138,7 +138,7 @@ All tools return typed results with a `status` field (`success` / `unavailable`)
 4. A spend threshold changes required approvers, not recommendation severity. Only an actual budget shortfall (`cost > available`) explicitly routes to Finance as an escalation outcome. (Discovery: policy separates approval roles from escalation outcomes.)
 5. Approval roles in threshold order: Manager, Department Head, Procurement, Finance, CFO, then applicable specialist reviews (Security, Privacy, Legal). Policy defines minimum roles, not ordering. (Discovery: no ordering specified in `procurement_policy.md`.)
 6. Empty `requested_integrations` means no integration was requested; it is distinct from an absent field.
-7. The workspace had no Git metadata at extraction. Git was initialized locally; no remote is configured. (Discovery: `fatal: not a git repository` on first inspection.)
+7. The extracted starter had no Git metadata. This assessment workspace was initialized as a Git repository and given a GitHub origin during the work.
 
 ---
 
@@ -157,7 +157,7 @@ All tools return typed results with a `status` field (`success` / `unavailable`)
 
 ### Dataset
 
-37 labelled cases (22 dev, 15 holdout) across 10 categories cover clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run. Holdout has not been run.
+37 labelled cases (22 dev, 15 holdout) across 10 categories cover clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run. Both architectures have one dev trace for each of the 22 dev cases. A used GPT-OSS 120B; B used GPT-OSS 20B, so this is not a matched model comparison. Holdout has not been run.
 
 ### How to run
 
@@ -180,7 +180,7 @@ python -m eval.runner --split holdout --arch both --mode live --repeats 1 --resu
 
 Use `--cases C-001,C-002` to target specific cases, `--fresh` to ignore checkpoints, `--no-cache` to skip recorded live responses.
 
-`make report` reads the committed full A dev trace and partial B dev trace, scores them with the same scorer, and writes `results/dev_checkpoint_summary.json` and `results/dev_checkpoint_report.md`. It does not call an LLM or rerun either architecture. Replay evaluation needs the ignored local response cache; a clean clone cannot reproduce inference without recordings or provider access.
+`make report` scores the committed A and B dev traces without calling an LLM. It consolidates three B trace files, verifies matching case IDs, and counts deterministic fail-closed rows as execution failures. It writes the same generated report to `results/report.md` and `results/dev_checkpoint_report.md`. Replay evaluation needs the ignored local response cache; a clean clone cannot reproduce inference without recordings or provider access.
 
 ### Current dry-run projections
 
@@ -189,46 +189,47 @@ Use `--cases C-001,C-002` to target specific cases, `--fresh` to ignore checkpoi
 | A | 22 | 154 | 451,076 | 3,663 |
 | B | 22 | 176 | 513,060 | 3,592 |
 
-These projections were produced by `make eval-dry-run` after the evidence-ID allowlist prompt change and recorded in [`results/dev_dry_run.txt`](results/dev_dry_run.txt). The dry-run assumes one tool call per turn, estimates each synthetic tool result at 200 tokens, and adds the configured completion allowance per call. Maximum estimated requests are below the wrapper's 7,000-token request limit, but aggregate values remain estimates, not a spend guarantee. The earlier four-case B projection (30,179 tokens) and pre-fix four-case live usage (36,249 measured tokens) are recorded in the local handover/log.
+These projections were produced by `make eval-dry-run` after the evidence-ID allowlist prompt change and recorded in [`results/dev_dry_run.txt`](results/dev_dry_run.txt). The dry-run assumes one tool call per turn, estimates each synthetic tool result at 200 tokens, and adds the configured completion allowance per call. Maximum estimated requests are below the wrapper's 7,000-token request limit, but aggregate values remain estimates, not a spend guarantee.
 
 ### Recorded dev results
 
-Metrics below are regenerated from committed live traces in `results/dev_checkpoint_report.md`. A covers all 22 dev cases. B covers only C-001–C-004 and uses the prompt before the evidence-ID allowlist fix. These are not a completed comparison.
+Metrics below are regenerated from live traces in `results/report.md`. Both architectures cover all 22 dev cases. A used GPT-OSS 120B. B used GPT-OSS 20B after the evidence-ID allowlist prompt fix. Six B cases used a deterministic fail-closed fallback after provider HTTP 400, empty-response, or connection errors; they are listed as execution failures, even where the fallback recommendation matches the label. The models differ, so these are not a matched architecture comparison.
 
-The report also records measured token totals: 141,363 for A's 22 cases and 36,249 for B's four cases. The different case counts make total usage incomparable.
+The report also records measured token totals: 141,363 for A and 175,836 for B.
 
-| Architecture | Cases | Recommendation accuracy | Escalation recall | Grounding | Injection resistance | p50 latency (ms) | p95 latency (ms) | Measured tokens | LLM calls / request |
+| Architecture / model | Cases | Recommendation accuracy including fallback | Escalation recall | Grounding | Injection cases | Agent execution failures | p50 / p95 latency (ms) | Measured tokens | LLM calls / request |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| A — full dev live | 22 | 0.955 | 1.000 | 1.000 | 1.000 | 157,965.6 | 161,434.0 | 141,363 | 5.91 |
-| B — partial dev live | 4 | 1.000 | 1.000 | 0.452 | 1.000 | 177,642.7 | 201,562.2 | 36,249 | 8.00 |
+| A — GPT-OSS 120B | 22 | 0.955 | 1.000 | 1.000 | 0 | 0 | 157,965.6 / 161,434.0 | 141,363 | 5.91 |
+| B — GPT-OSS 20B | 22 | 1.000 | 1.000 | 1.000 | 0 | 6 | 181,684.0 / 223,346.0 | 175,836 | 6.68 |
 
-A's only recommendation mismatch is C-003. The later code guard corrected the recommendation in a full replay, but the live result above is the original measured output. B's four cases all failed grounding: the analyst returned non-canonical evidence identifiers, which code dropped. B's updated evidence-ID prompt has not been verified live. No holdout results exist.
+Injection-resistance values are not informative because the dev split has no injection cases. B's outcome accuracy includes deterministic fallbacks, not only successful model-generated recommendations. Holdout results do not exist.
 
 ---
 
 ## Architecture comparison
 
-| Metric | A — full dev (22 cases) | B — partial dev (4 cases) | Comparison status |
+| Metric | A — GPT-OSS 120B (22 dev cases) | B — GPT-OSS 20B (22 dev cases) | Comparison status |
 |---|---:|---:|---|
-| Recommendation accuracy | 0.955 | 1.000 | Different sample sizes; B includes only four clean-path/incomplete cases |
-| Escalation recall | 1.000 | 1.000 | No comparison across full dev coverage |
-| Grounding | 1.000 | 0.452 | B fails on all four old-prompt cases |
-| Injection resistance | 1.000 | 1.000 | B sample contains no injection cases |
-| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 177,642.7 / 201,562.2 | Not a matched comparison |
-| LLM calls / request | 5.91 | 8.00 | B value is from four cases |
+| Recommendation accuracy including fallback | 0.955 | 1.000 | Same cases, different model versions; not a matched comparison |
+| Escalation recall | 1.000 | 1.000 | Dev only; holdout unrun |
+| Grounding | 1.000 | 1.000 | Six B runs failed closed without model completion |
+| Injection resistance | 1.000 | 1.000 | Neither dev sample contains an injection case |
+| Agent execution failures | 0 | 6 | B failures: C-007, C-008, C-011, C-013, C-016, C-018 |
+| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 181,684.0 / 223,346.0 | Includes B failed runs; model versions differ |
+| LLM calls / request | 5.91 | 6.68 | B includes partial failed calls |
 
 ---
 
 ## Ship decision
 
-No architecture is selected for shipment yet. The pre-registered rule is based on holdout, which has not been run; B also has an unresolved grounding failure in its four completed cases. The interim decision memo is in [`docs/memo.md`](docs/memo.md). Do not treat the partial dev results as the final ship decision.
+No architecture is cleared for shipment. The pre-registered rule depends on holdout and cannot be applied because holdout has not been run. The dev runs also used different model versions, and B had six model-call failures. See the interim decision memo in [`docs/memo.md`](docs/memo.md).
 
 ---
 
 ## Known limitations
 
-- **Architecture B evidence pack:** C-001–C-004 from the old prompt produced 11–12 non-canonical analyst evidence references each. Code dropped them; all four rows fail grounding. The allowlist prompt change has not been live-verified because the provider wait guard refused the smoke request.
+- **Architecture B model reliability:** Six current-model dev cases (C-007, C-008, C-011, C-013, C-016, C-018) failed during LLM calls and returned the deterministic fail-closed assessment. Recommendations happened to match labels, but these rows are not successful model completions.
 - **`compute_approval_chain` treats unknown vendor as new:** When vendor risk is unavailable, the tool cannot determine whether the vendor is new; it defaults to `vendor_is_new=True`, which may add Legal review to cases where the vendor is known. This is the safe-failure direction.
-- **Injection detection is heuristic:** The guard checks for pattern keywords; adversarial rephrasing may evade it. Injection cases include C-029 and C-030; the two following new-vendor cases are not evidence of an explicit blocked-vendor prohibition.
-- **Evaluation incomplete:** Architecture A has a full dev run; B has four dev cases only. Holdout has not been run. The B full-dev dry run estimates 165,614 tokens, but the prior four-case B run measured more tokens than its estimate; budget multiple days and retain headroom.
+- **Injection detection is heuristic:** The guard checks for pattern keywords; adversarial rephrasing may evade it. Injection cases C-026–C-028 are holdout and have not been run. The blocked-vendor cases C-031–C-032 do not establish an explicit prohibition because the supplied data has no `Blocked` procurement status.
+- **Evaluation incomplete:** A and B cover the same dev cases but use GPT-OSS 120B and 20B respectively. Holdout was not run, so no final ship decision can be made. Full-dev token projections are estimates, not provider spend guarantees.
 - **No blocked-vendor fixture:** The supplied data has no `Blocked` procurement status. C-031 and C-032 require review due to incomplete vendor information, not an explicit prohibition. `RECOMMEND_REJECTION` cannot be returned for these cases without evidence of a policy violation.

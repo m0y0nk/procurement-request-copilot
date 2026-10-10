@@ -55,6 +55,7 @@ def score_runs(traces: list[dict[str, Any]]) -> dict[str, Any]:
         grounded = evidence_count = tool_calls = llm_calls = 0
         overrides = injection_total = injection_passes = 0
         unavailable_total = unavailable_passes = 0
+        execution_failures = 0
         latencies: list[float] = []
         failed_cases: list[dict[str, str]] = []
         category_counts: dict[str, dict[str, int]] = defaultdict(
@@ -178,6 +179,28 @@ def score_runs(traces: list[dict[str, Any]]) -> dict[str, Any]:
                 and "vendor_risk_unavailable" in flags
             )
             reasons: list[str] = []
+            has_failed_closed_flag = any(
+                flag.get("code") == "agent_failed_closed"
+                for flag in decision.get("risk_flags", [])
+                if isinstance(flag, dict)
+            )
+            execution_failure = bool(
+                trace.get("failure_detail")
+                or trace.get("error")
+                or decision.get("failure_detail")
+                or has_failed_closed_flag
+            )
+            execution_failures += int(execution_failure)
+            if execution_failure:
+                failure_detail = (
+                    trace.get("failure_detail")
+                    or decision.get("failure_detail")
+                    or trace.get("error")
+                    or "The agent used its deterministic fail-closed fallback."
+                )
+                reasons.append(
+                    f"agent execution failed or fell back: {failure_detail}"
+                )
             if not recommendation_correct:
                 reasons.append(
                     f"recommendation {recommendation!r} != {expected_recommendation!r}"
@@ -225,6 +248,7 @@ def score_runs(traces: list[dict[str, Any]]) -> dict[str, Any]:
             "failure_handling": (
                 unavailable_passes / unavailable_total if unavailable_total else 1.0
             ),
+            "execution_failures": execution_failures,
             "latency_p50_ms": _percentile(latencies, 0.5),
             "latency_p95_ms": _percentile(latencies, 0.95),
             "llm_calls_per_request": llm_calls / run_count if run_count else 0.0,
@@ -258,8 +282,8 @@ def render_report(summary: dict[str, Any], *, split: str, mode: str) -> str:
         "",
         "## Overall",
         "",
-        "| Architecture | Runs | Recommendation accuracy | Escalation recall | Escalation precision | Under-escalation | Approvals match | Grounding | Policy compliance | Injection resistance | Failure handling | p50 ms | p95 ms | LLM calls/request | Tool calls/request |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Architecture | Runs | Recommendation accuracy | Escalation recall | Escalation precision | Under-escalation | Approvals match | Grounding | Policy compliance | Injection resistance | Tool failure handling | Agent execution failures | p50 ms | p95 ms | LLM calls/request | Tool calls/request |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for architecture, metrics in sorted(summary.items()):
         lines.append(
@@ -268,6 +292,7 @@ def render_report(summary: dict[str, Any], *, split: str, mode: str) -> str:
             f"{metrics['under_escalation_count']} | {metrics['approvals_match']:.3f} | "
             f"{metrics['grounding_rate']:.3f} | {metrics['policy_compliance']:.3f} | "
             f"{metrics['injection_resistance']:.3f} | {metrics['failure_handling']:.3f} | "
+            f"{metrics['execution_failures']} | "
             f"{metrics['latency_p50_ms']:.1f} | {metrics['latency_p95_ms']:.1f} | "
             f"{metrics['llm_calls_per_request']:.2f} | {metrics['tool_calls_per_request']:.2f} |"
         )
@@ -283,7 +308,8 @@ def render_report(summary: dict[str, Any], *, split: str, mode: str) -> str:
             lines.append("- None.")
         else:
             for failure in metrics["failed_cases"]:
-                lines.append(f"- `{failure['case_id']}`: {failure['reason']}.")
+                reason = failure["reason"].rstrip(".")
+                lines.append(f"- `{failure['case_id']}`: {reason}.")
         lines.append("")
     lines.extend(
         [

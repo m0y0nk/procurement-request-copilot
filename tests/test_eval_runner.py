@@ -143,6 +143,30 @@ class EvaluationRunnerTests(unittest.TestCase):
         self.assertEqual(summary["failed_cases"][0]["case_id"], "C-001")
         self.assertIn("recommendation", summary["failed_cases"][0]["reason"])
 
+    def test_scorer_reports_agent_execution_failures_even_when_fallback_matches(self):
+        trace = run_cases(
+            [self.case],
+            executor=lambda case, architecture, mode: _trace(
+                case, architecture, mode
+            ),
+            split="dev",
+            architectures=("A",),
+            mode="replay",
+            repeats=1,
+        )[0]
+        trace["failure_detail"] = "LLM provider returned HTTP 400."
+        trace["decision"]["failure_detail"] = trace["failure_detail"]
+        trace["decision"]["risk_flags"].append(
+            {"code": "agent_failed_closed"}
+        )
+
+        summary = score_runs([trace])["A"]
+
+        self.assertEqual(summary["recommendation_accuracy"], 1.0)
+        self.assertEqual(summary["execution_failures"], 1)
+        self.assertEqual(summary["failed_cases"][0]["case_id"], "C-001")
+        self.assertIn("HTTP 400", summary["failed_cases"][0]["reason"])
+
     def test_results_writer_creates_trace_summary_and_report(self):
         traces = run_cases(
             [self.case],
