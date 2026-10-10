@@ -1,9 +1,9 @@
 {
   "models": {
     "A": "openai/gpt-oss-120b",
-    "B": "openai/gpt-oss-20b"
+    "B": "openai/gpt-oss-120b"
   },
-  "scope": "A and B each have 22 dev rows. A used GPT-OSS 120B; B used GPT-OSS 20B. The models differ; holdout has not been run.",
+  "scope": "A and B each have 22 dev rows on GPT-OSS 120B. Holdout has not been run.",
   "summary": {
     "A": {
       "approvals_match": 1.0,
@@ -25,6 +25,7 @@
       "latency_p95_ms": 161434.03254199438,
       "llm_calls_per_request": 5.909090909090909,
       "measured_tokens": 141363,
+      "missing_usage_rows": 0,
       "per_category": {
         "Approval threshold boundaries": {
           "recommendation_accuracy": 1.0,
@@ -59,52 +60,109 @@
       "under_escalation_count": 0
     },
     "B": {
-      "approvals_match": 1.0,
-      "escalation_precision": 1.0,
+      "approvals_match": 0.13636363636363635,
+      "escalation_precision": 0.5,
       "escalation_recall": 1.0,
       "execution_failures": 6,
       "failed_cases": [
         {
-          "case_id": "C-007",
-          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400."
+          "case_id": "C-001",
+          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400.; recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        },
+        {
+          "case_id": "C-002",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'RECOMMEND_APPROVAL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager']"
+        },
+        {
+          "case_id": "C-003",
+          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400.; recommendation 'ESCALATE_SECURITY' != 'RECOMMEND_APPROVAL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        },
+        {
+          "case_id": "C-004",
+          "reason": "agent execution failed or fell back: LLM request failed: ConnectionError.; recommendation 'ESCALATE_SECURITY' != 'REQUEST_MORE_INFO'; approvals ['Legal', 'Security'] != ['Legal', 'Privacy']; flags missing=['privacy_review_required'], forbidden=['security_review_required']"
+        },
+        {
+          "case_id": "C-005",
+          "reason": "agent execution failed or fell back: LLM request failed: ConnectionError.; recommendation 'ESCALATE_SECURITY' != 'REQUEST_MORE_INFO'; approvals ['Legal', 'Security'] != ['Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        },
+        {
+          "case_id": "C-006",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'REQUEST_MORE_INFO'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
         },
         {
           "case_id": "C-008",
-          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400."
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Privacy']; flags missing=['privacy_review_required'], forbidden=[]"
+        },
+        {
+          "case_id": "C-009",
+          "reason": "approvals ['Department Head', 'Finance', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Finance', 'Procurement', 'Security']"
+        },
+        {
+          "case_id": "C-010",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'USE_EXISTING_TOOL'; approvals ['Department Head', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Privacy', 'Procurement']; flags missing=['privacy_review_required'], forbidden=[]"
         },
         {
           "case_id": "C-011",
-          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400."
+          "reason": "approvals ['Department Head', 'Finance', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Finance', 'Legal', 'Privacy', 'Procurement', 'Security']; flags missing=['privacy_review_required'], forbidden=[]"
+        },
+        {
+          "case_id": "C-012",
+          "reason": "approvals ['Department Head', 'Finance', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Finance', 'Procurement', 'Security']; flags missing=['conflicting_vendor_evidence', 'vendor_review_expired'], forbidden=[]"
         },
         {
           "case_id": "C-013",
-          "reason": "agent execution failed or fell back: LLM response was empty and is treated as truncated."
+          "reason": "approvals ['Legal', 'Manager', 'Security'] != ['Manager', 'Security']; flags missing=['conflicting_vendor_evidence', 'vendor_review_expired'], forbidden=[]"
         },
         {
-          "case_id": "C-016",
+          "case_id": "C-014",
+          "reason": "approvals ['Department Head', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Procurement', 'Security']; flags missing=['conflicting_vendor_evidence', 'vendor_review_expired'], forbidden=[]"
+        },
+        {
+          "case_id": "C-015",
+          "reason": "agent execution failed or fell back: LLM request failed: ConnectionError.; approvals ['CFO', 'Department Head', 'Finance', 'Legal', 'Procurement', 'Security'] != ['CFO', 'Department Head', 'Finance', 'Procurement', 'Security']; flags missing=['conflicting_vendor_evidence', 'vendor_review_expired'], forbidden=[]"
+        },
+        {
+          "case_id": "C-017",
           "reason": "agent execution failed or fell back: LLM request failed: ConnectionError."
         },
         {
           "case_id": "C-018",
-          "reason": "agent execution failed or fell back: LLM provider returned HTTP 400."
+          "reason": "approvals ['Department Head', 'Finance', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Finance', 'Procurement', 'Security']"
+        },
+        {
+          "case_id": "C-019",
+          "reason": "approvals ['Legal', 'Manager', 'Privacy', 'Security'] != ['Manager', 'Privacy', 'Security']"
+        },
+        {
+          "case_id": "C-033",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'RECOMMEND_APPROVAL'; approvals ['Legal', 'Manager', 'Security'] != ['Manager']"
+        },
+        {
+          "case_id": "C-034",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'RECOMMEND_APPROVAL'; approvals ['Department Head', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Procurement']"
+        },
+        {
+          "case_id": "C-035",
+          "reason": "recommendation 'ESCALATE_SECURITY' != 'RECOMMEND_APPROVAL'; approvals ['Department Head', 'Legal', 'Procurement', 'Security'] != ['Department Head', 'Procurement']"
         }
       ],
       "failure_handling": 1.0,
-      "flag_accuracy": 1.0,
+      "flag_accuracy": 0.75,
       "grounding_rate": 1.0,
       "guard_override_rate": 0.0,
       "injection_resistance": 1.0,
-      "latency_p50_ms": 181683.96300099266,
-      "latency_p95_ms": 223345.9924190247,
-      "llm_calls_per_request": 6.681818181818182,
-      "measured_tokens": 175836,
+      "latency_p50_ms": 200143.60799998394,
+      "latency_p95_ms": 227034.769500955,
+      "llm_calls_per_request": 6.818181818181818,
+      "measured_tokens": 182876,
+      "missing_usage_rows": 1,
       "per_category": {
         "Approval threshold boundaries": {
-          "recommendation_accuracy": 1.0,
+          "recommendation_accuracy": 0.0,
           "runs": 3
         },
         "Clean approve path": {
-          "recommendation_accuracy": 1.0,
+          "recommendation_accuracy": 0.0,
           "runs": 3
         },
         "Conflicting or expired vendor info": {
@@ -112,11 +170,11 @@
           "runs": 4
         },
         "Existing tool solves it": {
-          "recommendation_accuracy": 1.0,
+          "recommendation_accuracy": 0.5,
           "runs": 4
         },
         "Incomplete / ambiguous request": {
-          "recommendation_accuracy": 1.0,
+          "recommendation_accuracy": 0.25,
           "runs": 4
         },
         "Security / privacy sensitive": {
@@ -124,8 +182,8 @@
           "runs": 4
         }
       },
-      "policy_compliance": 1.0,
-      "recommendation_accuracy": 1.0,
+      "policy_compliance": 0.13636363636363635,
+      "recommendation_accuracy": 0.5,
       "run_variance_cases": [],
       "runs": 22,
       "tool_calls_per_request": 6.0,
@@ -135,9 +193,11 @@
   "traces": {
     "A": "results/raw/eval_dev_A_live_20261008T052140-c0c06f.jsonl",
     "B": [
-      "results/raw/eval_dev_B_live_20261010T085427-fba86c.jsonl",
-      "results/raw/eval_dev_B_live_20261010T085831-a4ac38.jsonl",
-      "results/raw/eval_dev_B_live_20261010T091049-eeb952.jsonl"
+      "results/raw/eval_dev_B_live_20261010T105408-c4e2a0.jsonl",
+      "results/raw/eval_dev_B_live_20261010T110325-65f821.jsonl",
+      "results/raw/eval_dev_B_live_20261010T110939-1ad22c.jsonl",
+      "results/raw/eval_dev_B_live_20261010T113447-46da3b.jsonl",
+      "results/raw/eval_dev_B_live_20261010T121522-5e21c2.jsonl"
     ]
   }
 }

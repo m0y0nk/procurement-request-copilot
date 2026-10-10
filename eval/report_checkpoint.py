@@ -12,9 +12,11 @@ DEFAULT_ARCH_A_TRACE = (
     ROOT / "results" / "raw" / "eval_dev_A_live_20261008T052140-c0c06f.jsonl"
 )
 DEFAULT_ARCH_B_TRACES = (
-    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T085427-fba86c.jsonl",
-    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T085831-a4ac38.jsonl",
-    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T091049-eeb952.jsonl",
+    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T105408-c4e2a0.jsonl",
+    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T110325-65f821.jsonl",
+    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T110939-1ad22c.jsonl",
+    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T113447-46da3b.jsonl",
+    ROOT / "results" / "raw" / "eval_dev_B_live_20261010T121522-5e21c2.jsonl",
 )
 DEFAULT_SUMMARY = ROOT / "results" / "dev_checkpoint_summary.json"
 DEFAULT_REPORT = ROOT / "results" / "dev_checkpoint_report.md"
@@ -82,27 +84,40 @@ def build_checkpoint(
         )
     traces = [*architecture_traces["A"], *architecture_traces["B"]]
     measured_tokens: dict[str, int] = {}
+    missing_usage_rows: dict[str, int] = {}
     for architecture, rows in architecture_traces.items():
         usage = [row.get("token_usage") for row in rows]
-        if any(
+        measured_tokens[architecture] = sum(
+            item["total_tokens"]
+            for item in usage
+            if isinstance(item, dict) and isinstance(item.get("total_tokens"), int)
+        )
+        missing_usage_rows[architecture] = sum(
             not isinstance(item, dict)
             or not isinstance(item.get("total_tokens"), int)
             for item in usage
-        ):
-            raise ValueError(
-                f"Every {architecture} trace must include measured total_tokens"
-            )
-        measured_tokens[architecture] = sum(
-            item["total_tokens"] for item in usage if isinstance(item, dict)
         )
     metrics = score_runs(traces)
+    b_execution_failures = [
+        str(trace["case_id"])
+        for trace in architecture_traces["B"]
+        if trace.get("failure_detail")
+        or trace.get("error")
+        or (trace.get("decision") or {}).get("failure_detail")
+        or any(
+            flag.get("code") == "agent_failed_closed"
+            for flag in (trace.get("decision") or {}).get("risk_flags", [])
+            if isinstance(flag, dict)
+        )
+    ]
     for architecture, total in measured_tokens.items():
         metrics[architecture]["measured_tokens"] = total
-    models = {"A": "openai/gpt-oss-120b", "B": "openai/gpt-oss-20b"}
+        metrics[architecture]["missing_usage_rows"] = missing_usage_rows[architecture]
+    models = {"A": "openai/gpt-oss-120b", "B": "openai/gpt-oss-120b"}
     summary = {
         "scope": (
-            "A and B each have 22 dev rows. A used GPT-OSS 120B; B used "
-            "GPT-OSS 20B. The models differ; holdout has not been run."
+            "A and B each have 22 dev rows on GPT-OSS 120B. Holdout has not "
+            "been run."
         ),
         "traces": {
             "A": _display_path(arch_a_path),
@@ -114,7 +129,7 @@ def build_checkpoint(
     report = render_report(
         summary["summary"],
         split="dev",
-        mode="live (A GPT-OSS 120B, B GPT-OSS 20B)",
+        mode="live (A and B GPT-OSS 120B)",
     )
     report = report.replace(
         "## Per category",
@@ -124,6 +139,8 @@ def build_checkpoint(
             f"|---|---:|---:|\n"
             f"| A | {metrics['A']['runs']} | {measured_tokens['A']:,} |\n"
             f"| B | {metrics['B']['runs']} | {measured_tokens['B']:,} |\n\n"
+            "One B row has no per-case token usage in its trace; the B total "
+            "is a trace-reported subtotal.\n\n"
             "## Per category"
         ),
         1,
@@ -133,8 +150,7 @@ def build_checkpoint(
         (
             "## Scope\n\n"
             "Both architectures have one row for each of the same 22 dev "
-            "cases. A used GPT-OSS 120B; B used GPT-OSS 20B, so this is not a "
-            "matched model comparison. B has "
+            "cases and used GPT-OSS 120B. B has "
             f"{metrics['B']['execution_failures']} agent execution failures "
             "where the deterministic fallback was retained; those are listed "
             "below and are not model-generated successes. No holdout run was "
@@ -152,13 +168,10 @@ def build_checkpoint(
             "## Failure analysis\n\n"
             "A's only recommendation mismatch is C-003; the model requested "
             "more information even though the code found no missing required "
-            "fields. B's recommendation outputs, including code fallbacks, "
-            "match the 22 dev labels. However, six B rows (C-007, C-008, "
-            "C-011, C-013, C-016, C-018) failed to complete the model path and "
-            "used the deterministic fail-closed assessment. They include "
-            "provider HTTP 400, empty response, and connection errors. The "
-            "scorer lists each such row as a failed case despite matching "
-            "fallback labels."
+            "fields. B execution failures: "
+            + ", ".join(b_execution_failures)
+            + ". The scorer lists failed rows even when a deterministic "
+            "fallback matches a case label."
         ),
         1,
     )

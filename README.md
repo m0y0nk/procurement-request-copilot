@@ -4,7 +4,7 @@ Inspects software and service purchase requests with six typed tools.
 Deterministic policy rules constrain recommendations shown to a human reviewer.
 All approvals and purchasing decisions stay with people.
 
-Architecture A (single agent) and Architecture B (staged analyst + reviewer) are implemented. Both have dev traces for the same 22 cases, but use different model versions; six B cases used a deterministic fallback after model-call failures. Holdout has not been run.
+Architecture A (single agent) and Architecture B (staged analyst + reviewer) are implemented. Both have dev traces for the same 22 cases on GPT-OSS 120B. B had six model execution failures and lower recommendation and approval accuracy. Holdout has not been run.
 
 > All companies, vendors, products, employees, prices, policies, and risk signals are synthetic and exist only for this assessment.
 
@@ -37,7 +37,7 @@ cp .env.example .env
 #   LLM_API_KEY=gsk_...      # Groq key; never commit this
 ```
 
-`.env.example` defaults to replay mode. Live mode targets Groq's OpenAI-compatible endpoint with `openai/gpt-oss-20b`.
+`.env.example` defaults to replay mode. Live mode targets Groq's OpenAI-compatible endpoint with `openai/gpt-oss-120b`.
 The UI waits up to `PROCUREMENT_ANALYSIS_TIMEOUT_SECONDS` (default 600) for analysis requests, which can take longer than simple API reads and writes.
 
 ### Start
@@ -157,7 +157,7 @@ All tools return typed results with a `status` field (`success` / `unavailable`)
 
 ### Dataset
 
-37 labelled cases (22 dev, 15 holdout) across 10 categories cover clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run. Both architectures have one dev trace for each of the 22 dev cases. A used GPT-OSS 120B; B used GPT-OSS 20B, so this is not a matched model comparison. Holdout has not been run.
+37 labelled cases (22 dev, 15 holdout) across 10 categories cover clean approve paths, incomplete requests, existing-tool overlaps, conflicting or expired vendor data, security/privacy-sensitive requests, approval threshold boundaries, over-budget cases, injection attempts, tool-unavailable scenarios, and new-vendor review cases. Labels were committed before any agent run. Both architectures have one dev trace for each of the 22 dev cases using GPT-OSS 120B. Holdout has not been run.
 
 ### How to run
 
@@ -180,7 +180,7 @@ python -m eval.runner --split holdout --arch both --mode live --repeats 1 --resu
 
 Use `--cases C-001,C-002` to target specific cases, `--fresh` to ignore checkpoints, `--no-cache` to skip recorded live responses.
 
-`make report` scores the committed A and B dev traces without calling an LLM. It consolidates three B trace files, verifies matching case IDs, and counts deterministic fail-closed rows as execution failures. It writes the same generated report to `results/report.md` and `results/dev_checkpoint_report.md`. Replay evaluation needs the ignored local response cache; a clean clone cannot reproduce inference without recordings or provider access.
+`make report` scores the committed A and B dev traces without calling an LLM. It consolidates the five B trace files, verifies matching case IDs, and counts deterministic fail-closed rows as execution failures. It writes the same generated report to `results/report.md` and `results/dev_checkpoint_report.md`. Replay evaluation needs the ignored local response cache; a clean clone cannot reproduce inference without recordings or provider access.
 
 ### Current dry-run projections
 
@@ -193,43 +193,44 @@ These projections were produced by `make eval-dry-run` after the evidence-ID all
 
 ### Recorded dev results
 
-Metrics below are regenerated from live traces in `results/report.md`. Both architectures cover all 22 dev cases. A used GPT-OSS 120B. B used GPT-OSS 20B after the evidence-ID allowlist prompt fix. Six B cases used a deterministic fail-closed fallback after provider HTTP 400, empty-response, or connection errors; they are listed as execution failures, even where the fallback recommendation matches the label. The models differ, so these are not a matched architecture comparison.
+Metrics below are regenerated from live traces in `results/report.md`. Both architectures cover the same 22 dev cases using GPT-OSS 120B. Six B cases used a deterministic fail-closed fallback after provider HTTP 400 or connection errors; they are listed as execution failures, even where the fallback recommendation matches the label. B also over-escalated several cases, producing lower recommendation and approval accuracy.
 
-The report also records measured token totals: 141,363 for A and 175,836 for B.
+The report records 141,363 provider-reported tokens for A and a 182,876-token subtotal for B. One B failure trace has no per-case token usage; the local 120B usage ledger recorded 184,695 tokens for B's run.
 
-| Architecture / model | Cases | Recommendation accuracy including fallback | Escalation recall | Grounding | Injection cases | Agent execution failures | p50 / p95 latency (ms) | Measured tokens | LLM calls / request |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| A — GPT-OSS 120B | 22 | 0.955 | 1.000 | 1.000 | 0 | 0 | 157,965.6 / 161,434.0 | 141,363 | 5.91 |
-| B — GPT-OSS 20B | 22 | 1.000 | 1.000 | 1.000 | 0 | 6 | 181,684.0 / 223,346.0 | 175,836 | 6.68 |
+| Architecture / model | Cases | Recommendation accuracy including fallback | Escalation recall | Approval match | Grounding | Injection cases | Agent execution failures | p50 / p95 latency (ms) | Trace-reported tokens | LLM calls / request |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| A — GPT-OSS 120B | 22 | 0.955 | 1.000 | 1.000 | 1.000 | 0 | 0 | 157,965.6 / 161,434.0 | 141,363 | 5.91 |
+| B — GPT-OSS 120B | 22 | 0.500 | 1.000 | 0.136 | 1.000 | 0 | 6 | 200,143.6 / 227,034.8 | 182,876* | 6.82 |
 
-Injection-resistance values are not informative because the dev split has no injection cases. B's outcome accuracy includes deterministic fallbacks, not only successful model-generated recommendations. Holdout results do not exist.
+*B trace-reported subtotal; one failed case has no per-case token usage. The local 120B ledger recorded 184,695 tokens. Injection-resistance values are not informative because the dev split has no injection cases. B's outcome accuracy includes deterministic fallbacks, not only successful model-generated recommendations. Holdout results do not exist.
 
 ---
 
 ## Architecture comparison
 
-| Metric | A — GPT-OSS 120B (22 dev cases) | B — GPT-OSS 20B (22 dev cases) | Comparison status |
+| Metric | A — GPT-OSS 120B (22 dev cases) | B — GPT-OSS 120B (22 dev cases) | Comparison status |
 |---|---:|---:|---|
-| Recommendation accuracy including fallback | 0.955 | 1.000 | Same cases, different model versions; not a matched comparison |
+| Recommendation accuracy including fallback | 0.955 | 0.500 | Same dev cases and model; B over-escalated several cases |
 | Escalation recall | 1.000 | 1.000 | Dev only; holdout unrun |
+| Approval match | 1.000 | 0.136 | B added or omitted approval roles on most cases |
 | Grounding | 1.000 | 1.000 | Six B runs failed closed without model completion |
 | Injection resistance | 1.000 | 1.000 | Neither dev sample contains an injection case |
-| Agent execution failures | 0 | 6 | B failures: C-007, C-008, C-011, C-013, C-016, C-018 |
-| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 181,684.0 / 223,346.0 | Includes B failed runs; model versions differ |
-| LLM calls / request | 5.91 | 6.68 | B includes partial failed calls |
+| Agent execution failures | 0 | 6 | B failures: C-001, C-003, C-004, C-005, C-015, C-017 |
+| p50 / p95 latency (ms) | 157,965.6 / 161,434.0 | 200,143.6 / 227,034.8 | Includes B failed runs |
+| LLM calls / request | 5.91 | 6.82 | B includes partial failed calls |
 
 ---
 
 ## Ship decision
 
-No architecture is cleared for shipment. The pre-registered rule depends on holdout and cannot be applied because holdout has not been run. The dev runs also used different model versions, and B had six model-call failures. See the interim decision memo in [`docs/memo.md`](docs/memo.md).
+No architecture is cleared for shipment. The pre-registered rule depends on holdout and cannot be applied because holdout has not been run. On matched-model dev data, B has lower recommendation accuracy (0.500 vs 0.955), lower approval match (0.136 vs 1.000), and six model-call failures. A is the provisional demo choice, not a validated ship decision. See [`docs/memo.md`](docs/memo.md).
 
 ---
 
 ## Known limitations
 
-- **Architecture B model reliability:** Six current-model dev cases (C-007, C-008, C-011, C-013, C-016, C-018) failed during LLM calls and returned the deterministic fail-closed assessment. Recommendations happened to match labels, but these rows are not successful model completions.
+- **Architecture B dev quality:** Six current-model dev cases (C-001, C-003, C-004, C-005, C-015, C-017) failed during LLM calls and returned the deterministic fail-closed assessment. Across all 22 dev cases, B recommendation accuracy including fallback was 0.500 and approval match was 0.136; several other cases were over-escalated.
 - **`compute_approval_chain` treats unknown vendor as new:** When vendor risk is unavailable, the tool cannot determine whether the vendor is new; it defaults to `vendor_is_new=True`, which may add Legal review to cases where the vendor is known. This is the safe-failure direction.
 - **Injection detection is heuristic:** The guard checks for pattern keywords; adversarial rephrasing may evade it. Injection cases C-026–C-028 are holdout and have not been run. The blocked-vendor cases C-031–C-032 do not establish an explicit prohibition because the supplied data has no `Blocked` procurement status.
-- **Evaluation incomplete:** A and B cover the same dev cases but use GPT-OSS 120B and 20B respectively. Holdout was not run, so no final ship decision can be made. Full-dev token projections are estimates, not provider spend guarantees.
+- **Evaluation incomplete:** A and B use GPT-OSS 120B on the same dev cases, but holdout was not run, so the pre-registered ship rule cannot be applied. Full-dev token projections are estimates, not provider spend guarantees.
 - **No blocked-vendor fixture:** The supplied data has no `Blocked` procurement status. C-031 and C-032 require review due to incomplete vendor information, not an explicit prohibition. `RECOMMEND_REJECTION` cannot be returned for these cases without evidence of a policy violation.
